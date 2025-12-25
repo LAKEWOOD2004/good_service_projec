@@ -67,10 +67,10 @@
       <v-row>
         <v-col cols="12" sm="6" lg="4" v-for="need in needs" :key="need.id">
           <v-card elevation="4" class="rounded-xl overflow-hidden h-100 hover-shadow" style="transition: transform 0.2s, box-shadow 0.2s;" @mouseover="$event.currentTarget.style.transform='translateY(-4px)'" @mouseout="$event.currentTarget.style.transform='translateY(0)'">
-            <div style="background: linear-gradient(135deg, #2E7D32 0%, #1976D2 100%); color: white;" class="pa-4">
-              <div class="d-flex justify-space-between align-center">
-                <v-chip :color="getTypeColor(need.service_type)" text-color="white" size="small">{{ need.service_type }}</v-chip>
-                <v-chip :color="getStatusColor(need.status)" text-color="white" size="small">{{ need.status_text }}</v-chip>
+            <div class="pa-4" style="background-color: transparent;">
+              <div class="d-flex justify-space-between align-center" style="gap:10px">
+                <v-chip :color="getTypeColor(need.service_type)" text-color="white" size="large" class="elevated-chip">{{ need.service_type }}</v-chip>
+                <v-chip :color="getStatusColor(need.status)" text-color="white" size="large" class="elevated-chip">{{ need.status_text }}</v-chip>
               </div>
             </div>
 
@@ -135,9 +135,9 @@
         </div>
 
         <v-card-text class="py-6 px-6">
-          <div class="mb-6">
-            <span class="text-sm font-weight-bold" style="color: #999;">服务类型</span>
-            <v-chip :color="getTypeColor(detailDialog.need.service_type)" text-color="white" class="mt-2">{{ detailDialog.need.service_type }}</v-chip>
+          <div class="mb-6 d-flex align-center" style="gap:16px;">
+            <span class="text-sm font-weight-bold" style="color: #999; width: 110px;">服务类型</span>
+            <v-chip :color="getTypeColor(detailDialog.need.service_type)" text-color="white" class="elevated-chip" size="large">{{ detailDialog.need.service_type }}</v-chip>
           </div>
 
           <div class="mb-6">
@@ -252,19 +252,19 @@ const formatDate = (dateStr) => {
 
 const getTypeColor = (type) => {
   const colors = {
-    '管道维修': '#FF6F00',
-    '助老服务': '#1976D2',
-    '保洁服务': '#2E7D32',
-    '就诊服务': '#7B1FA2',
-    '营养餐服务': '#F57C00',
-    '定期接送服务': '#0097A7',
-    '其他': '#616161'
+    '管道维修': '#D84315',
+    '助老服务': '#1565C0',
+    '保洁服务': '#1B5E20',
+    '就诊服务': '#6A1B9A',
+    '营养餐服务': '#E65100',
+    '定期接送服务': '#00796B',
+    '其他': '#424242'
   }
-  return colors[type] || '#616161'
+  return colors[type] || '#424242'
 }
 
 const getStatusColor = (status) => {
-  const colors = { 'open': '#4CAF50', 'closed': '#FF9800', 'pending': '#2196F3' }
+  const colors = { 'open': '#00C853', 'closed': '#FF6B35', 'pending': '#1976D2' }
   return colors[status] || '#616161'
 }
 
@@ -349,5 +349,13 @@ const loadRegions = async () => {
 <style scoped>
 .hover-shadow {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1) !important;
+}
+
+.elevated-chip {
+  box-shadow: 0 6px 18px rgba(0,0,0,0.12);
+  border-radius: 16px;
+  font-weight: 600;
+  padding-left: 12px;
+  padding-right: 12px;
 }
 </style>

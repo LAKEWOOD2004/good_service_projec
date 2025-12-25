@@ -4,9 +4,9 @@
       <v-row align="center" justify="center">
         <v-col cols="12" sm="8" md="5" lg="4">
         <!-- 主卡片 -->
-        <v-card class="elevation-12 overflow-hidden" style="border-radius: 20px; box-shadow: 0 20px 60px rgba(46, 125, 50, 0.2);">
+        <v-card class="elevation-12 overflow-hidden login-card">
           <!-- 卡片头部 - 渐变背景 -->
-          <div class="page-header text-center py-8 px-6" style="background: linear-gradient(135deg, #2E7D32 0%, #1976D2 100%); border-radius: 20px 20px 0 0;">
+          <div class="page-header text-center py-8 px-6 login-header">
             <v-icon size="56" class="mb-3" style="color: white;">mdi-handshake</v-icon>
             <h1 class="text-h4 font-weight-bold mb-2" style="color: white; letter-spacing: -1px;">好服务平台</h1>
             <p class="text-subtitle-2 mb-0" style="color: rgba(255,255,255,0.9);">用心服务 · 让生活更美好</p>
@@ -372,6 +372,17 @@ const handleRegister = async () => {
 
 .form-group {
   margin-bottom: 20px;
+}
+
+/* Login card / header unified styles */
+.login-card {
+  border-radius: 32px;
+  box-shadow: 0 20px 60px rgba(46, 125, 50, 0.2);
+  overflow: hidden;
+}
+.login-header {
+  background: linear-gradient(135deg, #2E7D32 0%, #1976D2 100%);
+  color: white;
 }
 </style>
 
