@@ -1,0 +1,410 @@
+<template>
+  <div style="background: linear-gradient(135deg, #f0f9ff 0%, #f0fdf4 100%); min-height: 100vh;">
+    <PageHeader 
+      title="个人信息管理"
+      subtitle="查看和编辑您的个人资料"
+    />
+
+    <v-container class="py-6">
+      <v-row>
+        <v-col cols="12" md="8" lg="6" class="mx-auto">
+          <v-card elevation="4" class="rounded-xl overflow-hidden">
+            <v-card-text class="pa-8">
+              <!-- 显示模式 -->
+              <div v-if="!editing">
+                <v-row class="mb-6">
+                  <v-col cols="12" md="6">
+                    <div class="info-item pa-4 rounded-lg" style="background-color: #f5f5f5;">
+                      <span class="label d-block mb-2">用户名</span>
+                      <span class="value text-h6 font-weight-bold">{{ user.username }}</span>
+                    </div>
+                  </v-col>
+                  <v-col cols="12" md="6">
+                    <div class="info-item pa-4 rounded-lg" style="background-color: #f5f5f5;">
+                      <span class="label d-block mb-2">真实姓名</span>
+                      <span class="value text-h6 font-weight-bold">{{ user.real_name || '未设置' }}</span>
+                    </div>
+                  </v-col>
+                </v-row>
+
+                <v-row class="mb-6">
+                  <v-col cols="12" md="6">
+                    <div class="info-item pa-4 rounded-lg" style="background-color: #f5f5f5;">
+                      <span class="label d-block mb-2">手机号码</span>
+                      <span class="value text-h6 font-weight-bold">{{ user.phone || '未设置' }}</span>
+                    </div>
+                  </v-col>
+                  <v-col cols="12" md="6">
+                    <div class="info-item pa-4 rounded-lg" style="background-color: #f5f5f5;">
+                      <span class="label d-block mb-2">用户类型</span>
+                      <v-chip :color="user.user_type === 'admin' ? 'error' : 'primary'" text-color="white" size="large" class="mt-2">
+                        {{ user.user_type === 'admin' ? '管理员' : '普通用户' }}
+                      </v-chip>
+                    </div>
+                  </v-col>
+                </v-row>
+
+                <v-row class="mb-6">
+                  <v-col cols="12">
+                    <div class="info-item pa-4 rounded-lg" style="background-color: #f5f5f5;">
+                      <span class="label d-block mb-2">个人简介</span>
+                      <span class="value text-body-2">{{ user.bio || '未设置' }}</span>
+                    </div>
+                  </v-col>
+                </v-row>
+
+                <v-divider class="my-6"></v-divider>
+
+                <v-row>
+                  <v-col cols="12" sm="6">
+                    <v-btn 
+                      variant="flat" 
+                      block
+                      color="white"
+                      class="rounded-lg font-weight-bold text-subtitle-2 py-3"
+                      style="background: linear-gradient(135deg, #2E7D32 0%, #1976D2 100%);"
+                      @click="enterEditMode"
+                    >
+                      <v-icon class="mr-2">mdi-pencil</v-icon>
+                      编辑信息
+                    </v-btn>
+                  </v-col>
+                  <v-col cols="12" sm="6">
+                    <v-btn 
+                      variant="outlined" 
+                      block
+                      color="primary" 
+                      class="rounded-lg font-weight-bold text-subtitle-2 py-3"
+                      @click="changePassword"
+                    >
+                      <v-icon class="mr-2">mdi-lock-reset</v-icon>
+                      修改密码
+                    </v-btn>
+                  </v-col>
+                </v-row>
+              </div>
+
+              <!-- 编辑模式 -->
+              <div v-else>
+                <v-form ref="editForm" v-model="editValid">
+                  <v-text-field
+                    v-model="editData.phone"
+                    label="手机号码"
+                    prepend-inner-icon="mdi-phone"
+                    :rules="[v => !v || /^\d{11}$/.test(v) || '必须是11位数字']"
+                    class="mb-6"
+                    variant="outlined"
+                    color="primary"
+                    density="comfortable"
+                  ></v-text-field>
+
+                  <v-textarea
+                    v-model="editData.bio"
+                    label="个人简介"
+                    prepend-icon="mdi-text"
+                    rows="4"
+                    counter="200"
+                    maxlength="200"
+                    class="mb-6"
+                    variant="outlined"
+                    color="primary"
+                    density="comfortable"
+                  ></v-textarea>
+
+                  <v-row>
+                    <v-col cols="12" sm="6">
+                      <v-btn 
+                        variant="flat" 
+                        block
+                        color="white"
+                        class="rounded-lg font-weight-bold py-3"
+                        style="background: linear-gradient(135deg, #2E7D32 0%, #1976D2 100%);"
+                        @click="saveChanges" 
+                        :loading="saving"
+                      >
+                        <v-icon class="mr-2">mdi-content-save</v-icon>
+                        保存修改
+                      </v-btn>
+                    </v-col>
+                    <v-col cols="12" sm="6">
+                      <v-btn 
+                        variant="outlined" 
+                        block
+                        color="primary" 
+                        class="rounded-lg font-weight-bold py-3"
+                        @click="cancelEdit"
+                      >
+                        <v-icon class="mr-2">mdi-cancel</v-icon>
+                        取消
+                      </v-btn>
+                    </v-col>
+                  </v-row>
+                </v-form>
+              </div>
+            </v-card-text>
+          </v-card>
+        </v-col>
+      </v-row>
+    </v-container>
+
+    <!-- 修改密码对话框 -->
+    <v-dialog v-model="passwordDialog" max-width="500px">
+      <v-card class="rounded-xl overflow-hidden">
+        <div style="background: linear-gradient(135deg, #2E7D32 0%, #1976D2 100%); color: white;" class="pa-6">
+          <v-card-title class="text-h6 text-white pa-0">
+            <v-icon class="mr-2">mdi-lock-reset</v-icon>
+            修改密码
+          </v-card-title>
+        </div>
+
+        <v-card-text class="py-6 px-6">
+          <v-form ref="passwordForm" v-model="passwordFormValid">
+            <v-text-field
+              v-model="passwordData.oldPassword"
+              label="原密码"
+              type="password"
+              required
+              :rules="[v => !!v || '原密码必填']"
+              class="mb-6"
+              variant="outlined"
+              color="primary"
+              density="comfortable"
+              prepend-inner-icon="mdi-lock"
+            ></v-text-field>
+
+            <v-text-field
+              v-model="passwordData.newPassword"
+              label="新密码"
+              type="password"
+              :rules="passwordRules"
+              persistent-hint
+              hint="至少6位，含2个数字，不能全大写或小写"
+              class="mb-6"
+              variant="outlined"
+              color="primary"
+              density="comfortable"
+              prepend-inner-icon="mdi-lock-plus"
+            ></v-text-field>
+
+            <v-text-field
+              v-model="passwordData.confirmPassword"
+              label="确认新密码"
+              type="password"
+              required
+              :rules="[
+                v => !!v || '确认密码必填',
+                v => v === passwordData.newPassword || '两次密码输入不一致'
+              ]"
+              class="mb-6"
+              variant="outlined"
+              color="primary"
+              density="comfortable"
+              prepend-inner-icon="mdi-lock-check"
+            ></v-text-field>
+
+            <v-alert v-if="passwordError" type="error" closable variant="tonal">
+              {{ passwordError }}
+            </v-alert>
+          </v-form>
+        </v-card-text>
+
+        <v-divider></v-divider>
+
+        <v-card-actions class="py-4 px-6">
+          <v-spacer></v-spacer>
+          <v-btn 
+            variant="outlined" 
+            color="primary" 
+            class="rounded-lg font-weight-bold mr-3"
+            @click="passwordDialog = false"
+          >
+            取消
+          </v-btn>
+          <v-btn 
+            variant="flat" 
+            color="white"
+            class="rounded-lg font-weight-bold"
+            style="background: linear-gradient(135deg, #2E7D32 0%, #1976D2 100%);"
+            @click="submitPasswordChange" 
+            :loading="passwordSubmitting"
+          >
+            确认修改
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <!-- 消息提示 -->
+    <v-snackbar v-model="snackbar" :color="snackbarColor" rounded="lg">
+      {{ snackbarMessage }}
+    </v-snackbar>
+  </div>
+</template>
+
+<script setup name="ProfilePage">
+import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
+import axios from 'axios'
+import PageHeader from '@/components/PageHeader.vue'
+
+const router = useRouter()
+
+// 用户数据
+const user = ref({
+  id: null,
+  username: '',
+  real_name: '',
+  phone: '',
+  bio: '',
+  user_type: 'normal'
+})
+
+// 编辑状态
+const editing = ref(false)
+const editForm = ref(null)
+const editValid = ref(false)
+const editData = ref({
+  phone: '',
+  bio: ''
+})
+const saving = ref(false)
+
+// 密码修改
+const passwordDialog = ref(false)
+const passwordForm = ref(null)
+const passwordFormValid = ref(false)
+const passwordData = ref({
+  oldPassword: '',
+  newPassword: '',
+  confirmPassword: ''
+})
+const passwordError = ref('')
+const passwordSubmitting = ref(false)
+
+// 消息提示
+const snackbar = ref(false)
+const snackbarMessage = ref('')
+const snackbarColor = ref('success')
+
+const passwordRules = [
+  v => !!v || '密码必填',
+  v => v.length >= 6 || '长度至少6位',
+  v => (v.match(/\d/g) || []).length >= 2 || '必须含有至少两个数字',
+  v => !(/^[a-z]+$/.test(v) || /^[A-Z]+$/.test(v)) || '不能全是大写或小写'
+]
+
+// 初始化
+onMounted(() => {
+  const userData = localStorage.getItem('user')
+  if (!userData) {
+    router.push('/login')
+    return
+  }
+  
+  user.value = JSON.parse(userData)
+  editData.value.phone = user.value.phone || ''
+  editData.value.bio = user.value.bio || ''
+})
+
+// 进入编辑模式
+const enterEditMode = () => {
+  editData.value.phone = user.value.phone || ''
+  editData.value.bio = user.value.bio || ''
+  editing.value = true
+}
+
+// 取消编辑
+const cancelEdit = () => {
+  editing.value = false
+}
+
+// 保存修改
+const saveChanges = async () => {
+  if (!editValid.value) return
+  
+  saving.value = true
+  
+  try {
+    const res = await axios.put(`http://127.0.0.1:5000/api/user/update/${user.value.id}`, {
+      phone: editData.value.phone,
+      bio: editData.value.bio
+    })
+    
+    if (res.data.code === 200) {
+      user.value.phone = editData.value.phone
+      user.value.bio = editData.value.bio
+      localStorage.setItem('user', JSON.stringify(user.value))
+      editing.value = false
+      showMessage('信息更新成功', 'success')
+    } else {
+      showMessage(res.data.msg, 'error')
+    }
+  } catch (error) {
+    showMessage(error.response?.data?.msg || '保存失败', 'error')
+  } finally {
+    saving.value = false
+  }
+}
+
+// 打开修改密码对话框
+const changePassword = () => {
+  passwordData.value = {
+    oldPassword: '',
+    newPassword: '',
+    confirmPassword: ''
+  }
+  passwordError.value = ''
+  passwordDialog.value = true
+}
+
+// 提交密码修改
+const submitPasswordChange = async () => {
+  if (!passwordFormValid.value) return
+  
+  passwordSubmitting.value = true
+  passwordError.value = ''
+  
+  try {
+    const res = await axios.put(`http://127.0.0.1:5000/api/user/update/${user.value.id}`, {
+      password: passwordData.value.newPassword
+    })
+    
+    if (res.data.code === 200) {
+      passwordDialog.value = false
+      showMessage('密码修改成功', 'success')
+    } else {
+      passwordError.value = res.data.msg
+    }
+  } catch (error) {
+    passwordError.value = error.response?.data?.msg || '修改失败'
+  } finally {
+    passwordSubmitting.value = false
+  }
+}
+
+// 显示消息
+const showMessage = (message, color = 'success') => {
+  snackbarMessage.value = message
+  snackbarColor.value = color
+  snackbar.value = true
+}
+</script>
+
+<style scoped>
+.info-item {
+  transition: all 0.3s ease;
+}
+
+.info-item:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.label {
+  font-weight: 600;
+  color: #666;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+</style>
