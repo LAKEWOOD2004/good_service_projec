@@ -39,34 +39,41 @@ def register_admin_routes(app):
     def get_stats_by_service_type():
         """按服务类型统计需求和响应"""
         try:
-            # 按服务类型统计需求
-            needs_by_type = db.session.query(
-                ServiceNeed.service_type,
-                func.count(ServiceNeed.id).label('need_count')
-            ).filter(ServiceNeed.status == 0).group_by(
-                ServiceNeed.service_type
-            ).all()
+            # 获取所有需要统计的服务需求
+            need_query = ServiceNeed.query.filter(ServiceNeed.status == 0)  # 只统计活跃需求
+            all_needs = need_query.all()
             
-            # 按服务类型统计成功响应
-            success_by_type = db.session.query(
-                ServiceNeed.service_type,
-                func.count(ResponseSuccess.id).label('success_count')
-            ).join(
-                ResponseSuccess, ServiceNeed.id == ResponseSuccess.need_id
-            ).group_by(
-                ServiceNeed.service_type
-            ).all()
+            # 获取所有需要统计的响应成功
+            success_query = ResponseSuccess.query
+            all_successes = success_query.all()
             
-            # 合并数据
+            # 按服务类型分组统计
             type_stats = {}
-            for service_type, need_count in needs_by_type:
-                type_stats[service_type] = {'need_count': need_count, 'success_count': 0}
             
-            for service_type, success_count in success_by_type:
-                if service_type in type_stats:
-                    type_stats[service_type]['success_count'] = success_count
-                else:
-                    type_stats[service_type] = {'need_count': 0, 'success_count': success_count}
+            # 统计服务需求数
+            for need in all_needs:
+                service_type = need.service_type
+                
+                # 初始化或更新统计数据
+                if service_type not in type_stats:
+                    type_stats[service_type] = {'need_count': 0, 'success_count': 0}
+                
+                type_stats[service_type]['need_count'] += 1
+            
+            # 统计响应成功数
+            for success in all_successes:
+                # 获取需求信息
+                need = ServiceNeed.query.get(success.need_id)
+                if not need:
+                    continue
+                
+                service_type = need.service_type
+                
+                # 初始化或更新统计数据
+                if service_type not in type_stats:
+                    type_stats[service_type] = {'need_count': 0, 'success_count': 0}
+                
+                type_stats[service_type]['success_count'] += 1
             
             return jsonify({
                 "code": 200,
@@ -80,38 +87,45 @@ def register_admin_routes(app):
     def get_stats_by_region():
         """按地域统计需求和响应"""
         try:
-            # 按地域统计需求
-            needs_by_region = db.session.query(
-                (func.concat(Region.province, '-', Region.city, '-', Region.name)).label('region_name'),
-                func.count(ServiceNeed.id).label('need_count')
-            ).join(
-                ServiceNeed, Region.id == ServiceNeed.region_id
-            ).filter(ServiceNeed.status == 0).group_by(
-                Region.id, Region.province, Region.city, Region.name
-            ).all()
+            # 获取所有需要统计的服务需求
+            need_query = ServiceNeed.query.filter(ServiceNeed.status == 0)  # 只统计活跃需求
+            all_needs = need_query.all()
             
-            # 按地域统计成功响应
-            success_by_region = db.session.query(
-                (func.concat(Region.province, '-', Region.city, '-', Region.name)).label('region_name'),
-                func.count(ResponseSuccess.id).label('success_count')
-            ).join(
-                ServiceNeed, Region.id == ServiceNeed.region_id
-            ).join(
-                ResponseSuccess, ServiceNeed.id == ResponseSuccess.need_id
-            ).group_by(
-                Region.id, Region.province, Region.city, Region.name
-            ).all()
+            # 获取所有需要统计的响应成功
+            success_query = ResponseSuccess.query
+            all_successes = success_query.all()
             
-            # 合并数据
+            # 按地域分组统计
             region_stats = {}
-            for region_name, need_count in needs_by_region:
-                region_stats[region_name] = {'need_count': need_count, 'success_count': 0}
             
-            for region_name, success_count in success_by_region:
-                if region_name in region_stats:
-                    region_stats[region_name]['success_count'] = success_count
-                else:
-                    region_stats[region_name] = {'need_count': 0, 'success_count': success_count}
+            # 统计服务需求数
+            for need in all_needs:
+                # 获取地域信息
+                region = Region.query.get(need.region_id)
+                region_name = f"{region.province}-{region.city}-{region.name}" if region else '未知地域'
+                
+                # 初始化或更新统计数据
+                if region_name not in region_stats:
+                    region_stats[region_name] = {'need_count': 0, 'success_count': 0}
+                
+                region_stats[region_name]['need_count'] += 1
+            
+            # 统计响应成功数
+            for success in all_successes:
+                # 获取需求信息
+                need = ServiceNeed.query.get(success.need_id)
+                if not need:
+                    continue
+                
+                # 获取地域信息
+                region = Region.query.get(need.region_id)
+                region_name = f"{region.province}-{region.city}-{region.name}" if region else '未知地域'
+                
+                # 初始化或更新统计数据
+                if region_name not in region_stats:
+                    region_stats[region_name] = {'need_count': 0, 'success_count': 0}
+                
+                region_stats[region_name]['success_count'] += 1
             
             return jsonify({
                 "code": 200,
@@ -202,6 +216,7 @@ def register_admin_routes(app):
         """
         获取月度汇总统计数据
         支持按时间段、地域条件查询，返回明细列表
+        直接从实际业务表计算，确保数据一致性
         
         参数:
             start_month: 起始年月 (YYYYMM格式，如202301)
@@ -226,52 +241,163 @@ def register_admin_routes(app):
             page = request.args.get('page', default=1, type=int)
             per_page = request.args.get('per_page', default=10, type=int)
             
-            # 构建查询条件
-            query = MonthlySummary.query
+            # 获取所有需要统计的服务需求
+            need_query = ServiceNeed.query.filter(ServiceNeed.status == 0)  # 只统计活跃需求
+            all_needs = need_query.all()
             
-            # 按时间段筛选
-            if start_month:
-                query = query.filter(MonthlySummary.month >= start_month)
-            if end_month:
-                query = query.filter(MonthlySummary.month <= end_month)
+            # 获取所有需要统计的响应成功
+            success_query = ResponseSuccess.query
+            all_successes = success_query.all()
             
-            # 按地域筛选
-            if province:
-                query = query.filter(MonthlySummary.province == province)
-            if city:
-                query = query.filter(MonthlySummary.city == city)
+            # 按月份、地域、服务类型分组统计
+            stats_map = {}
             
-            # 按服务类型筛选
-            if service_type:
-                query = query.filter(MonthlySummary.service_type.contains(service_type))
+            # 统计服务需求数
+            for need in all_needs:
+                # 获取月份 (YYYYMM格式)
+                month = need.created_at.strftime('%Y%m')
+                
+                # 跳过不在查询范围内的月份
+                if start_month and month < start_month:
+                    continue
+                if end_month and month > end_month:
+                    continue
+                
+                # 获取地域信息
+                region = Region.query.get(need.region_id)
+                need_province = region.province if region else '未知'
+                need_city = region.city if region else '未知'
+                
+                # 处理城市筛选条件（前端传递的格式：省份-城市，如"广东省-广州市"）
+                city_to_compare = f"{need_province}-{need_city}" if region else '未知-未知'
+                
+                # 跳过不在查询范围内的地域
+                if province and need_province != province:
+                    continue
+                if city and city not in city_to_compare:
+                    continue
+                
+                # 跳过不在查询范围内的服务类型
+                if service_type and service_type != need.service_type:
+                    continue
+                
+                # 服务类型
+                need_service_type = need.service_type
+                
+                # 生成唯一键
+                key = f"{month}|{need_province}|{need_city}|{need_service_type}"
+                
+                # 初始化或更新统计数据
+                if key not in stats_map:
+                    stats_map[key] = {
+                        'month': month,
+                        'province': need_province,
+                        'city': need_city,
+                        'service_type': need_service_type,
+                        'need_count': 0,
+                        'response_success_count': 0
+                    }
+                
+                stats_map[key]['need_count'] += 1
+            
+            # 统计响应成功数
+            for success in all_successes:
+                # 获取需求信息
+                need = ServiceNeed.query.get(success.need_id)
+                if not need:
+                    continue
+                
+                # 获取月份 (YYYYMM格式)
+                month = success.accept_date.strftime('%Y%m')
+                
+                # 跳过不在查询范围内的月份
+                if start_month and month < start_month:
+                    continue
+                if end_month and month > end_month:
+                    continue
+                
+                # 获取地域信息
+                region = Region.query.get(need.region_id)
+                success_province = region.province if region else '未知'
+                success_city = region.city if region else '未知'
+                
+                # 处理城市筛选条件（前端传递的格式：省份-城市，如"广东省-广州市"）
+                city_to_compare = f"{success_province}-{success_city}" if region else '未知-未知'
+                
+                # 跳过不在查询范围内的地域
+                if province and success_province != province:
+                    continue
+                if city and city not in city_to_compare:
+                    continue
+                
+                # 跳过不在查询范围内的服务类型
+                if service_type and service_type != need.service_type:
+                    continue
+                
+                # 服务类型
+                success_service_type = need.service_type
+                
+                # 生成唯一键
+                key = f"{month}|{success_province}|{success_city}|{success_service_type}"
+                
+                # 初始化或更新统计数据
+                if key not in stats_map:
+                    stats_map[key] = {
+                        'month': month,
+                        'province': success_province,
+                        'city': success_city,
+                        'service_type': success_service_type,
+                        'need_count': 0,
+                        'response_success_count': 0
+                    }
+                
+                stats_map[key]['response_success_count'] += 1
+            
+            # 如果没有数据，返回空列表
+            if len(stats_map) == 0:
+                return jsonify({
+                    "code": 200,
+                    "data": [],
+                    "pagination": {
+                        "page": 1,
+                        "per_page": per_page,
+                        "total": 0,
+                        "pages": 0
+                    }
+                }), 200
+            
+            # 转换为列表并排序
+            stats_list = list(stats_map.values())
             
             # 排序
-            if sort_by in ['need_count', 'response_success_count']:
-                if sort_order == 'asc':
-                    query = query.order_by(getattr(MonthlySummary, sort_by).asc())
-                else:
-                    query = query.order_by(getattr(MonthlySummary, sort_by).desc())
-            else:
-                # 默认按月份降序
-                query = query.order_by(MonthlySummary.month.desc())
+            stats_list.sort(key=lambda x: (
+                # 先按月份排序（降序）
+                -int(x['month']),
+                # 再按指定字段排序
+                x[sort_by] if sort_order == 'asc' else -x[sort_by]
+            ))
             
-            # 分页
-            pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+            # 手动分页
+            total = len(stats_list)
+            pages = (total + per_page - 1) // per_page
+            start = (page - 1) * per_page
+            end = start + per_page
+            paginated_stats = stats_list[start:end]
             
             # 构建响应数据
             items = []
-            for summary in pagination.items:
+            for index, stat in enumerate(paginated_stats, 1):
                 items.append({
-                    'id': summary.id,
-                    'month': summary.month,
-                    'province': summary.province,
-                    'city': summary.city,
-                    'region': f"{summary.province}-{summary.city}",
-                    'service_type': summary.service_type,
-                    'need_count': summary.need_count,
-                    'response_success_count': summary.response_success_count,
-                    'created_at': summary.created_at.strftime('%Y-%m-%d %H:%M:%S') if summary.created_at else '',
-                    'updated_at': summary.updated_at.strftime('%Y-%m-%d %H:%M:%S') if summary.updated_at else ''
+                    'id': index,
+                    'month': stat['month'],
+                    'province': stat['province'],
+                    'city': stat['city'],
+                    'region': f"{stat['province']}-{stat['city']}",
+                    'service_type': stat['service_type'],
+                    'need_count': stat['need_count'],
+                    'response_success_count': stat['response_success_count'],
+                    'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                    'updated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                 })
             
             return jsonify({
@@ -280,8 +406,52 @@ def register_admin_routes(app):
                 "pagination": {
                     "page": page,
                     "per_page": per_page,
-                    "total": pagination.total,
-                    "pages": pagination.pages
+                    "total": total,
+                    "pages": pages
+                }
+            }), 200
+            
+        except Exception as e:
+            return jsonify({"code": 500, "msg": f"系统错误: {str(e)}"}), 500
+    
+    
+    @app.route('/api/admin/stats/update-monthly-summary', methods=['POST'])
+    def update_monthly_summary_stats():
+        """
+        手动更新月度统计数据
+        支持按时间段更新
+        
+        参数:
+            start_date: 起始日期 (YYYY-MM-DD格式，可选)
+            end_date: 终止日期 (YYYY-MM-DD格式，可选)
+        """
+        try:
+            # 导入更新函数
+            from update_monthly_summary import update_monthly_summary
+            from datetime import datetime
+            
+            # 获取请求参数
+            start_date_str = request.json.get('start_date')
+            end_date_str = request.json.get('end_date')
+            
+            # 解析日期
+            start_date = None
+            end_date = None
+            
+            if start_date_str:
+                start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
+            
+            if end_date_str:
+                end_date = datetime.strptime(end_date_str, '%Y-%m-%d')
+            
+            # 执行更新
+            updated_count = update_monthly_summary(start_date, end_date)
+            
+            return jsonify({
+                "code": 200,
+                "msg": f"月度统计数据更新成功，共处理 {updated_count} 条记录",
+                "data": {
+                    "updated_count": updated_count
                 }
             }), 200
         except Exception as e:

@@ -53,7 +53,7 @@
                       :rules="[v => !!v || '用户名必填']"
                       class="mb-5"
                       variant="outlined"
-                      density="comfortable"
+                      density="default"
                       hide-details="auto"
                       color="primary"
                       placeholder="输入用户名或邮箱"
@@ -71,7 +71,7 @@
                       :rules="[v => !!v || '密码必填']"
                       class="mb-6"
                       variant="outlined"
-                      density="comfortable"
+                      density="default"
                       hide-details="auto"
                       color="primary"
                       placeholder="输入密码"
@@ -132,7 +132,7 @@
                       :rules="[v => !!v || '用户名必填', v => v.length >= 3 || '用户名至少3个字符']"
                       class="mb-5"
                       variant="outlined"
-                      density="comfortable"
+                      density="default"
                       hide-details="auto"
                       color="primary"
                       placeholder="输入用户名"
@@ -148,7 +148,7 @@
                       :rules="passwordRules"
                       class="mb-5"
                       variant="outlined"
-                      density="comfortable"
+                      density="default"
                       color="primary"
                       placeholder="至少6位，含2个数字，不能全大写或小写"
                       hide-details="auto"
@@ -175,7 +175,7 @@
                       :rules="[v => !!v || '手机号必填', v => /^\d{11}$/.test(v) || '必须是11位数字']"
                       class="mb-6"
                       variant="outlined"
-                      density="comfortable"
+                      density="default"
                       hide-details="auto"
                       color="primary"
                       placeholder="输入11位手机号码"
@@ -371,6 +371,7 @@ const handleRegister = async () => {
 }
 
 .form-group {
+  margin-top: 10px;
   margin-bottom: 20px;
 }
 

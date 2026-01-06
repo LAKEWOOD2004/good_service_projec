@@ -117,7 +117,7 @@
               class="mb-4"
               variant="outlined"
               color="primary"
-              density="comfortable"
+              density="default"
               placeholder="请输入需求标题"
             ></v-text-field>
 
@@ -130,7 +130,7 @@
               class="mb-4"
               variant="outlined"
               color="primary"
-              density="comfortable"
+              density="default"
             ></v-select>
 
             <v-select
@@ -142,7 +142,7 @@
               class="mb-4"
               variant="outlined"
               color="primary"
-              density="comfortable"
+              density="default"
             ></v-select>
 
             <v-textarea
@@ -154,7 +154,7 @@
               class="mb-4"
               variant="outlined"
               color="primary"
-              density="comfortable"
+              density="default"
               placeholder="请详细描述您的服务需求"
             ></v-textarea>
 

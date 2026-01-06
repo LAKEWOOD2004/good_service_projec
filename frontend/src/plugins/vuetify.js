@@ -56,17 +56,17 @@ export default createVuetify({
     },
     VTextField: {
       variant: 'outlined',
-      density: 'comfortable',
+      density: 'default',
       hideDetails: 'auto'
     },
     VSelect: {
       variant: 'outlined',
-      density: 'comfortable',
+      density: 'default',
       hideDetails: 'auto'
     },
     VTextarea: {
       variant: 'outlined',
-      density: 'comfortable'
+      density: 'default'
     },
     VAppBar: {
       elevation: 4,

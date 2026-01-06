@@ -188,6 +188,64 @@ def register_service_response_routes(app):
         except Exception as e:
             return jsonify({"code": 500, "msg": f"系统错误: {str(e)}"}), 500
     
+    @app.route('/api/service-needs/<int:need_id>/responses', methods=['GET'])
+    def get_need_responses(need_id):
+        """
+        获取某个服务需求的所有响应列表
+        即：发布者查看自己发布的需求的响应列表
+        
+        参数:
+            need_id: 服务需求ID
+            page: 页码 (默认1)
+            per_page: 每页条数 (默认10)
+        """
+        try:
+            page = request.args.get('page', default=1, type=int)
+            per_page = request.args.get('per_page', default=10, type=int)
+            
+            # 获取该需求的所有响应
+            query = ServiceResponse.query.filter_by(need_id=need_id).order_by(
+                ServiceResponse.created_at.desc()
+            )
+            
+            paginated = query.paginate(page=page, per_page=per_page, error_out=False)
+            responses = paginated.items
+            
+            response_data = []
+            for resp in responses:
+                responder = User.query.get(resp.user_id)
+                
+                response_data.append({
+                    'id': resp.id,
+                    'need_id': resp.need_id,
+                    'user_id': resp.user_id,
+                    'responder_name': responder.real_name if responder else '游客',
+                    'responder_phone': responder.phone if responder else '',
+                    'content': resp.content,
+                    'status': resp.status,
+                    'status_text': {
+                        0: '待处理',
+                        1: '已接受',
+                        2: '已拒绝',
+                        3: '已取消'
+                    }.get(resp.status, '未知'),
+                    'created_at': resp.created_at.strftime('%Y-%m-%d %H:%M:%S') if resp.created_at else '',
+                    'updated_at': resp.updated_at.strftime('%Y-%m-%d %H:%M:%S') if resp.updated_at else ''
+                })
+            
+            return jsonify({
+                "code": 200,
+                "data": response_data,
+                "pagination": {
+                    "page": page,
+                    "per_page": per_page,
+                    "total": paginated.total,
+                    "pages": paginated.pages
+                }
+            }), 200
+        except Exception as e:
+            return jsonify({"code": 500, "msg": f"系统错误: {str(e)}"}), 500
+    
     
     @app.route('/api/service-responses', methods=['POST'])
     def create_service_response():
@@ -314,6 +372,20 @@ def register_service_response_routes(app):
                     
                     if other_accepted:
                         return jsonify({"code": 400, "msg": "此需求已有被接受的响应"}), 400
+                    
+                    # 创建ResponseSuccess记录，标记为成功响应
+                    from models import ResponseSuccess
+                    response_success = ResponseSuccess(
+                        need_id=resp.need_id,
+                        need_user_id=need.user_id,
+                        response_id=resp.id,
+                        response_user_id=resp.user_id
+                    )
+                    db.session.add(response_success)
+                    
+                    # 只接受当前响应，不自动拒绝其他响应
+                    # 让需求发布者手动处理其他响应，避免自动拒绝带来的用户困惑
+                    # 业务逻辑：每个需求可以有多个响应，但只能接受一个
                 
                 # 状态为2(拒绝)时，也必须由需求发布者操作
                 elif new_status == 2:

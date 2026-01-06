@@ -247,9 +247,12 @@ def register_service_need_routes(app):
             db.session.rollback()
             return jsonify({"code": 500, "msg": f"系统错误: {str(e)}"}), 500
     
+    # 注意：此API端点已被废弃，请使用 /api/service-responses POST 接口
     @app.route('/api/service-needs/<int:need_id>/respond', methods=['POST'])
     def respond_to_need(need_id):
-        """对服务需求进行响应"""
+        """
+        对服务需求进行响应 (已废弃)
+        """
         try:
             from models import ServiceResponse
             
@@ -259,11 +262,34 @@ def register_service_need_routes(app):
             if not need:
                 return jsonify({"code": 404, "msg": "需求不存在"}), 404
             
+            # 检查需求是否有效
+            if need.status != 0:
+                return jsonify({"code": 400, "msg": "需求已失效"}), 400
+            
             user_id = data.get('responder_id')
             content = data.get('content')
             
             if not user_id or not content:
                 return jsonify({"code": 400, "msg": "必填字段不能为空"}), 400
+            
+            # 检查用户是否存在
+            user = User.query.get(user_id)
+            if not user:
+                return jsonify({"code": 404, "msg": "用户不存在"}), 404
+            
+            # 不允许对自己的需求进行响应
+            if need.user_id == user_id:
+                return jsonify({"code": 400, "msg": "不能对自己的需求进行响应"}), 400
+            
+            # 检查是否已经响应过
+            existing = ServiceResponse.query.filter_by(
+                need_id=need_id,
+                user_id=user_id,
+                status=0
+            ).first()
+            
+            if existing:
+                return jsonify({"code": 400, "msg": "您已经对此需求进行过响应"}), 400
             
             # 创建响应
             response = ServiceResponse(

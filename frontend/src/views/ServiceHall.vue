@@ -15,7 +15,7 @@
                 label="搜索关键词"
                 prepend-inner-icon="mdi-magnify"
                 variant="outlined"
-                density="comfortable"
+                density="default"
                 color="primary"
                 @keyup.enter="loadNeeds"
               ></v-text-field>
@@ -27,7 +27,7 @@
                 :items="serviceTypes"
                 prepend-inner-icon="mdi-tag"
                 variant="outlined"
-                density="comfortable"
+                density="default"
                 color="primary"
                 clearable
                 @update:model-value="loadNeeds"
@@ -42,7 +42,7 @@
                 item-value="id"
                 prepend-inner-icon="mdi-map-marker"
                 variant="outlined"
-                density="comfortable"
+                density="default"
                 color="primary"
                 clearable
                 @update:model-value="loadNeeds"
@@ -202,7 +202,7 @@
               :rules="[v => !!v || '必填', v => v.length >= 10 || '至少10个字']"
               variant="outlined"
               color="primary"
-              density="comfortable"
+              density="default"
             ></v-textarea>
           </v-form>
         </v-card-text>

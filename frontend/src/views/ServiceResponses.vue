@@ -150,7 +150,7 @@ const formatDate = (dateStr) => {
 }
 
 const getStatusColor = (status) => {
-  const colors = { 'pending': '#2196F3', 'accepted': '#4CAF50', 'completed': '#FF9800', 'rejected': '#F44336' }
+  const colors = { 0: '#2196F3', 1: '#4CAF50', 2: '#F44336', 3: '#9E9E9E' }
   return colors[status] || '#616161'
 }
 
@@ -175,8 +175,13 @@ const loadResponses = async () => {
         content: r.content,
         status: r.status,
         create_time: r.created_at,
-        review_time: r.review_time,
-        status_text: r.status === 'pending' ? '待处理' : r.status === 'accepted' ? '已接受' : r.status === 'completed' ? '已完成' : '已拒绝'
+        review_time: r.updated_at,
+        status_text: {
+          0: '待处理',
+          1: '已接受',
+          2: '已拒绝',
+          3: '已取消'
+        }[r.status] || '未知状态'
       }))
       pagination.value.totalPages = res.data.pagination?.pages || 1
     }
@@ -200,7 +205,13 @@ const confirmDelete = async () => {
   if (!deleteDialog.value.response) return
   deleteDialog.value.loading = true
   try {
-    const res = await axios.delete(`http://127.0.0.1:5000/api/service-responses/${deleteDialog.value.response.id}`)
+    // 后端API使用PUT请求来标记响应为已取消，而不是DELETE请求
+    const userData = localStorage.getItem('user')
+    const user = JSON.parse(userData)
+    const res = await axios.put(`http://127.0.0.1:5000/api/service-responses/${deleteDialog.value.response.id}`, {
+      user_id: user.id,
+      status: 3 // 3 = 已取消
+    })
     if (res.data.code === 200) {
       snackbar.value = { show: true, message: '删除成功', color: 'success' }
       deleteDialog.value.show = false

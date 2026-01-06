@@ -73,3 +73,96 @@ class MonthlySummary(db.Model):
     response_success_count = db.Column(db.Integer, default=0) # 月累计响应成功服务数
     created_at = db.Column(db.DateTime, default=datetime.now)
     updated_at = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now)
+
+# 导入事件监听器需要的模块
+from sqlalchemy import event
+
+# 定义更新月度统计的辅助函数
+def update_single_monthly_summary(record, is_need=True):
+    """
+    更新单条记录对应的月度统计
+    
+    参数:
+        record: 新增或修改的记录对象 (ServiceNeed或ResponseSuccess)
+        is_need: 是否为服务需求记录
+    """
+    from app import app
+    with app.app_context():
+        if is_need:
+            # 处理ServiceNeed记录
+            need = record
+            month = need.created_at.strftime('%Y%m')
+            region = Region.query.get(need.region_id)
+            province = region.province if region else '未知'
+            city = region.city if region else '未知'
+            service_type = need.service_type
+            
+            # 生成唯一键
+            key = f"{month}|{province}|{city}|{service_type}"
+            
+            # 查找或创建月度统计记录
+            existing = MonthlySummary.query.filter(
+                MonthlySummary.month == month,
+                MonthlySummary.province == province,
+                MonthlySummary.city == city,
+                MonthlySummary.service_type == service_type
+            ).first()
+            
+            if existing:
+                existing.need_count += 1
+            else:
+                new_summary = MonthlySummary(
+                    month=month,
+                    province=province,
+                    city=city,
+                    service_type=service_type,
+                    need_count=1,
+                    response_success_count=0
+                )
+                db.session.add(new_summary)
+        else:
+            # 处理ResponseSuccess记录
+            success = record
+            need = ServiceNeed.query.get(success.need_id)
+            if need:
+                month = success.accept_date.strftime('%Y%m')
+                region = Region.query.get(need.region_id)
+                province = region.province if region else '未知'
+                city = region.city if region else '未知'
+                service_type = need.service_type
+                
+                # 生成唯一键
+                key = f"{month}|{province}|{city}|{service_type}"
+                
+                # 查找或创建月度统计记录
+                existing = MonthlySummary.query.filter(
+                    MonthlySummary.month == month,
+                    MonthlySummary.province == province,
+                    MonthlySummary.city == city,
+                    MonthlySummary.service_type == service_type
+                ).first()
+                
+                if existing:
+                    existing.response_success_count += 1
+                else:
+                    new_summary = MonthlySummary(
+                        month=month,
+                        province=province,
+                        city=city,
+                        service_type=service_type,
+                        need_count=0,
+                        response_success_count=1
+                    )
+                    db.session.add(new_summary)
+        
+        db.session.commit()
+
+# 为ServiceNeed添加事件监听器，在插入数据后更新月度统计
+@event.listens_for(ServiceNeed, 'after_insert')
+def after_service_need_insert(mapper, connection, target):
+    update_single_monthly_summary(target, is_need=True)
+
+# 为ResponseSuccess添加事件监听器，在插入数据后更新月度统计
+@event.listens_for(ResponseSuccess, 'after_insert')
+def after_response_success_insert(mapper, connection, target):
+    update_single_monthly_summary(target, is_need=False)

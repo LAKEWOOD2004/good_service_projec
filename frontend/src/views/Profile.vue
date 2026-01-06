@@ -82,7 +82,7 @@
                     class="mb-6"
                     variant="outlined"
                     color="primary"
-                    density="comfortable"
+                    density="default"
                   ></v-text-field>
 
                   <v-textarea
@@ -94,7 +94,7 @@
                     class="mb-6"
                     variant="outlined"
                     color="primary"
-                    density="comfortable"
+                    density="default"
                   ></v-textarea>
 
                   <v-row>
@@ -150,7 +150,7 @@
               class="mb-6"
               variant="outlined"
               color="primary"
-              density="comfortable"
+              density="default"
             ></v-text-field>
 
             <v-text-field
@@ -161,7 +161,7 @@
               class="mb-6"
               variant="outlined"
               color="primary"
-              density="comfortable"
+              density="default"
             ></v-text-field>
 
             <v-text-field
@@ -173,7 +173,7 @@
               class="mb-6"
               variant="outlined"
               color="primary"
-              density="comfortable"
+              density="default"
             ></v-text-field>
 
             <v-alert v-if="passwordError" type="error" closable variant="tonal">

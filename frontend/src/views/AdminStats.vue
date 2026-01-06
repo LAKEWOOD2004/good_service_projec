@@ -259,7 +259,7 @@
               ></v-text-field>
             </v-col>
             <v-col cols="12" sm="6" md="2">
-              <v-text-field
+              <v-select
                 v-model="monthlyParams.province"
                 label="省份"
                 density="compact"
@@ -267,10 +267,13 @@
                 color="primary"
                 prepend-icon="mdi-map-marker-radius"
                 class="bg-white"
-              ></v-text-field>
+                :items="availableOptions.provinces"
+                clearable
+                hide-details="auto"
+              ></v-select>
             </v-col>
             <v-col cols="12" sm="6" md="2">
-              <v-text-field
+              <v-select
                 v-model="monthlyParams.city"
                 label="城市"
                 density="compact"
@@ -278,10 +281,13 @@
                 color="primary"
                 prepend-icon="mdi-city"
                 class="bg-white"
-              ></v-text-field>
+                :items="cityOptions"
+                clearable
+                hide-details="auto"
+              ></v-select>
             </v-col>
             <v-col cols="12" sm="6" md="2">
-              <v-text-field
+              <v-select
                 v-model="monthlyParams.service_type"
                 label="服务类型"
                 density="compact"
@@ -289,7 +295,10 @@
                 color="primary"
                 prepend-icon="mdi-tag"
                 class="bg-white"
-              ></v-text-field>
+                :items="availableOptions.serviceTypes"
+                clearable
+                hide-details="auto"
+              ></v-select>
             </v-col>
             <v-col cols="12" class="text-right">
               <v-btn
@@ -324,7 +333,8 @@
           :page="stats.monthlySummary.pagination.page"
           :total-items="stats.monthlySummary.pagination.total"
           @update:page="changePage"
-          hide-default-footer
+          show-empty
+          :loading="false"
         >
           <template v-slot:item.month="{ item }">
             {{ item.month.substring(0, 4) }}年{{ item.month.substring(4, 6) }}月
@@ -342,27 +352,6 @@
               {{ item.response_success_count }}
             </v-chip>
           </template>
-          <template #footer>
-            <div class="text-center pa-3">
-              <v-btn
-                v-if="stats.monthlySummary.pagination.page > 1"
-                @click="changePage(stats.monthlySummary.pagination.page - 1)"
-                variant="outlined"
-                size="small"
-              >
-                上一页
-              </v-btn>
-              <span class="mx-2">{{ stats.monthlySummary.pagination.page }} / {{ stats.monthlySummary.pagination.pages }}</span>
-              <v-btn
-                v-if="stats.monthlySummary.pagination.page < stats.monthlySummary.pagination.pages"
-                @click="changePage(stats.monthlySummary.pagination.page + 1)"
-                variant="outlined"
-                size="small"
-              >
-                下一页
-              </v-btn>
-            </div>
-          </template>
         </v-data-table>
       </v-card-text>
     </v-card>
@@ -376,7 +365,7 @@
 </template>
 
 <script setup name="AdminStatsPage">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import axios from 'axios'
 import { Line } from 'vue-chartjs'
@@ -477,11 +466,11 @@ const monthlyParams = ref({
 
 // 图表数据
 const chartData = ref({
-  labels: [],
+  labels: ['暂无数据'],
   datasets: [
     {
       label: '月累计发布服务需求数',
-      data: [],
+      data: [0],
       borderColor: '#1976D2',
       backgroundColor: 'rgba(25, 118, 210, 0.1)',
       fill: true,
@@ -489,7 +478,7 @@ const chartData = ref({
     },
     {
       label: '月累计响应成功服务数',
-      data: [],
+      data: [0],
       borderColor: '#4CAF50',
       backgroundColor: 'rgba(76, 175, 80, 0.1)',
       fill: true,
@@ -498,6 +487,55 @@ const chartData = ref({
   ]
 })
 
+// 可用选项数据
+const availableOptions = ref({
+  provinces: [],
+  cities: [],
+  serviceTypes: []
+})
+
+// 城市选项（根据选择的省份动态更新）
+const cityOptions = computed(() => {
+  if (!monthlyParams.value.province) {
+    return availableOptions.value.cities
+  }
+  return availableOptions.value.cities.filter(city => {
+    return city.startsWith(monthlyParams.value.province + '-')
+  })
+})
+
+// 加载可用选项
+const loadAvailableOptions = async () => {
+  try {
+    // 从by-service-type接口获取可用的服务类型
+    const serviceTypeRes = await axios.get('http://127.0.0.1:5000/api/admin/stats/by-service-type')
+    if (serviceTypeRes.data.code === 200) {
+      availableOptions.value.serviceTypes = Object.keys(serviceTypeRes.data.data)
+    }
+    
+    // 从by-region接口获取可用的省份和城市
+    const regionRes = await axios.get('http://127.0.0.1:5000/api/admin/stats/by-region')
+    if (regionRes.data.code === 200) {
+      const regions = Object.keys(regionRes.data.data)
+      const provinces = new Set()
+      const cities = new Set()
+      
+      regions.forEach(region => {
+        const parts = region.split('-')
+        if (parts.length >= 2) {
+          provinces.add(parts[0])
+          cities.add(`${parts[0]}-${parts[1]}`)
+        }
+      })
+      
+      availableOptions.value.provinces = Array.from(provinces).sort()
+      availableOptions.value.cities = Array.from(cities).sort()
+    }
+  } catch (error) {
+    console.error('加载可用选项失败:', error)
+  }
+}
+
 // 图表配置
 const chartOptions = ref({
   responsive: true,
@@ -505,15 +543,41 @@ const chartOptions = ref({
   plugins: {
     legend: {
       position: 'top',
+      labels: {
+        font: {
+          size: 14
+        }
+      }
     },
     title: {
       display: true,
-      text: '月度服务需求与响应统计'
+      text: '月度服务需求与响应统计',
+      font: {
+        size: 16
+      }
     }
   },
   scales: {
     y: {
-      beginAtZero: true
+      beginAtZero: true,
+      ticks: {
+        font: {
+          size: 12
+        }
+      }
+    },
+    x: {
+      ticks: {
+        font: {
+          size: 12,
+          color: '#333' // 确保X轴标签颜色可见
+        },
+        maxRotation: 45,
+        minRotation: 45
+      },
+      grid: {
+        display: false // 隐藏X轴网格线，使图表更清晰
+      }
     }
   }
 })
@@ -527,7 +591,7 @@ const snackbarColor = ref('success')
 const user = ref(null)
 
 // 初始化
-onMounted(() => {
+onMounted(async () => {
   const userData = localStorage.getItem('user')
   if (!userData) {
     router.push('/login')
@@ -545,7 +609,18 @@ onMounted(() => {
     return
   }
   
-  loadAllStats()
+  console.log('开始初始化')
+  
+  // 先加载所有统计数据，再加载可用选项
+  try {
+    await loadAllStats()
+    console.log('统计数据加载完成')
+    await loadAvailableOptions()
+    console.log('可用选项加载完成')
+  } catch (error) {
+    console.error('初始化失败:', error)
+    showMessage('初始化失败', 'error')
+  }
 })
 
 // 加载月度统计数据
@@ -557,52 +632,133 @@ const loadMonthlyStats = async (page = 1) => {
       per_page: stats.value.monthlySummary.pagination.per_page
     }
     
+    console.log('请求月度统计数据参数:', params)
+    
     const response = await axios.get('http://127.0.0.1:5000/api/admin/stats/monthly-summary', {
       params: params
     })
     
+    console.log('月度统计数据响应:', response.data)
+    
     if (response.data.code === 200) {
+      console.log('月度统计数据:', response.data.data)
       stats.value.monthlySummary.data = response.data.data
-      stats.value.monthlySummary.pagination = response.data.pagination
+      // 确保pagination字段存在，避免访问undefined属性
+      if (response.data.pagination) {
+        stats.value.monthlySummary.pagination = response.data.pagination
+      } else {
+        // 如果没有pagination字段，设置默认值
+        stats.value.monthlySummary.pagination = {
+          page: 1,
+          per_page: 10,
+          total: response.data.data.length,
+          pages: Math.ceil(response.data.data.length / 10)
+        }
+      }
+      console.log('更新前的stats.monthlySummary.data:', stats.value.monthlySummary.data)
       updateChartData()
     }
   } catch (error) {
+    console.error('加载月度统计数据失败:', error)
+    console.error('错误详情:', error.response)
     showMessage(error.response?.data?.msg || '加载月度统计数据失败', 'error')
   }
 }
 
 // 更新图表数据
 const updateChartData = () => {
-  // 获取去重后的月份列表（按月份排序）
-  const months = [...new Set(stats.value.monthlySummary.data.map(item => item.month))]
-    .sort((a, b) => a.localeCompare(b))
+  // 初始化图表数据
+  const newChartData = {
+    labels: [],
+    datasets: [
+      {
+        label: '月累计发布服务需求数',
+        data: [],
+        borderColor: '#1976D2',
+        backgroundColor: 'rgba(25, 118, 210, 0.1)',
+        fill: true,
+        tension: 0.1
+      },
+      {
+        label: '月累计响应成功服务数',
+        data: [],
+        borderColor: '#4CAF50',
+        backgroundColor: 'rgba(76, 175, 80, 0.1)',
+        fill: true,
+        tension: 0.1
+      }
+    ]
+  };
   
-  // 按月份分组统计
+  // 确保stats.value.monthlySummary.data是数组
+  if (!stats.value.monthlySummary || !Array.isArray(stats.value.monthlySummary.data)) {
+    // 如果数据为空或不是数组，显示暂无数据
+    newChartData.labels = ['暂无数据'];
+    newChartData.datasets[0].data = [0];
+    newChartData.datasets[1].data = [0];
+    chartData.value = newChartData;
+    return;
+  }
+  
+  const monthlyData = stats.value.monthlySummary.data;
+  
+  // 如果没有数据，显示暂无数据
+  if (monthlyData.length === 0) {
+    newChartData.labels = ['暂无数据'];
+    newChartData.datasets[0].data = [0];
+    newChartData.datasets[1].data = [0];
+    chartData.value = newChartData;
+    return;
+  }
+  
+  // 按月份分组统计数据
   const monthlyStats = {};
-  months.forEach(month => {
-    monthlyStats[month] = {
-      need_count: 0,
-      response_success_count: 0
-    }
-  })
   
-  stats.value.monthlySummary.data.forEach(item => {
-    if (monthlyStats[item.month]) {
-      monthlyStats[item.month].need_count += item.need_count
-      monthlyStats[item.month].response_success_count += item.response_success_count
+  // 遍历所有数据，按月份分组
+  monthlyData.forEach(item => {
+    const month = item.month;
+    
+    // 如果该月份不存在，初始化
+    if (!monthlyStats[month]) {
+      monthlyStats[month] = {
+        need_count: 0,
+        response_success_count: 0
+      };
     }
-  })
+    
+    // 累加需求数和成功数
+    monthlyStats[month].need_count += item.need_count;
+    monthlyStats[month].response_success_count += item.response_success_count;
+  });
+  
+  // 获取月份列表并按月份排序
+  const monthList = Object.keys(monthlyStats).sort();
+  
+  // 填充图表数据
+  monthList.forEach(month => {
+    // 格式化月份显示：YYYY年MM月
+    const formattedMonth = `${month.substring(0, 4)}年${month.substring(4, 6)}月`;
+    newChartData.labels.push(formattedMonth);
+    
+    // 填充需求数和成功数
+    newChartData.datasets[0].data.push(monthlyStats[month].need_count);
+    newChartData.datasets[1].data.push(monthlyStats[month].response_success_count);
+  });
   
   // 更新图表数据
-  chartData.value.labels = months.map(month => `${month.substring(0, 4)}年${month.substring(4, 6)}月`)
-  chartData.value.datasets[0].data = months.map(month => monthlyStats[month].need_count)
-  chartData.value.datasets[1].data = months.map(month => monthlyStats[month].response_success_count)
+  chartData.value = newChartData;
 }
 
 // 加载所有统计数据
 const loadAllStats = async () => {
   try {
-    // 并行加载所有统计数据
+    console.log('开始加载所有统计数据')
+    
+    // 先加载月度统计数据，这是图表的主要数据
+    await loadMonthlyStats()
+    console.log('月度统计数据加载完成')
+    
+    // 然后加载其他统计数据
     const [
       overviewRes,
       serviceTypeRes,
@@ -616,6 +772,8 @@ const loadAllStats = async () => {
       axios.get('http://127.0.0.1:5000/api/admin/stats/response-rate'),
       axios.get('http://127.0.0.1:5000/api/admin/stats/user-activity')
     ])
+    
+    console.log('其他统计数据加载完成')
     
     // 更新统计数据
     if (overviewRes.data.code === 200) {
@@ -644,9 +802,10 @@ const loadAllStats = async () => {
       stats.value.userActivity = userActivityRes.data.data
     }
     
-    // 加载月度统计数据（默认加载第一页）
-    await loadMonthlyStats()
+    console.log('所有统计数据加载完成')
   } catch (error) {
+    console.error('加载统计数据失败:', error)
+    console.error('错误详情:', error.response)
     showMessage(error.response?.data?.msg || '加载统计数据失败', 'error')
   }
 }
