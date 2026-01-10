@@ -3,6 +3,9 @@
 用户通过这些API来对他人发布的服务需求进行响应，即提供服务帮助
 """
 
+import os
+from werkzeug.utils import secure_filename
+from flask import current_app
 from flask import request, jsonify
 from datetime import datetime
 from models import db, ServiceResponse, ServiceNeed, User, Region
@@ -137,10 +140,6 @@ def register_service_response_routes(app):
         """
         获取用户发布的所有服务响应
         即：用户对他人需求的响应列表
-        
-        参数:
-            page: 页码 (默认1)
-            per_page: 每页条数 (默认10)
         """
         try:
             page = request.args.get('page', default=1, type=int)
@@ -164,64 +163,7 @@ def register_service_response_routes(app):
                     'need_subject': need.subject if need else '已删除',
                     'service_type': need.service_type if need else '',
                     'content': resp.content,
-                    'status': resp.status,
-                    'status_text': {
-                        0: '待处理',
-                        1: '已接受',
-                        2: '已拒绝',
-                        3: '已取消'
-                    }.get(resp.status, '未知'),
-                    'created_at': resp.created_at.strftime('%Y-%m-%d %H:%M:%S') if resp.created_at else '',
-                    'updated_at': resp.updated_at.strftime('%Y-%m-%d %H:%M:%S') if resp.updated_at else ''
-                })
-            
-            return jsonify({
-                "code": 200,
-                "data": response_data,
-                "pagination": {
-                    "page": page,
-                    "per_page": per_page,
-                    "total": paginated.total,
-                    "pages": paginated.pages
-                }
-            }), 200
-        except Exception as e:
-            return jsonify({"code": 500, "msg": f"系统错误: {str(e)}"}), 500
-    
-    @app.route('/api/service-needs/<int:need_id>/responses', methods=['GET'])
-    def get_need_responses(need_id):
-        """
-        获取某个服务需求的所有响应列表
-        即：发布者查看自己发布的需求的响应列表
-        
-        参数:
-            need_id: 服务需求ID
-            page: 页码 (默认1)
-            per_page: 每页条数 (默认10)
-        """
-        try:
-            page = request.args.get('page', default=1, type=int)
-            per_page = request.args.get('per_page', default=10, type=int)
-            
-            # 获取该需求的所有响应
-            query = ServiceResponse.query.filter_by(need_id=need_id).order_by(
-                ServiceResponse.created_at.desc()
-            )
-            
-            paginated = query.paginate(page=page, per_page=per_page, error_out=False)
-            responses = paginated.items
-            
-            response_data = []
-            for resp in responses:
-                responder = User.query.get(resp.user_id)
-                
-                response_data.append({
-                    'id': resp.id,
-                    'need_id': resp.need_id,
-                    'user_id': resp.user_id,
-                    'responder_name': responder.real_name if responder else '游客',
-                    'responder_phone': responder.phone if responder else '',
-                    'content': resp.content,
+                    'media_url': resp.media_url,  # <--- 这里加上 media_url
                     'status': resp.status,
                     'status_text': {
                         0: '待处理',
@@ -247,74 +189,40 @@ def register_service_response_routes(app):
             return jsonify({"code": 500, "msg": f"系统错误: {str(e)}"}), 500
     
     
-    @app.route('/api/service-responses', methods=['POST'])
-    def create_service_response():
-        """
-        创建新的服务响应
-        用户通过此接口对某个需求提出服务响应
-        
-        请求体:
-            {
-                "need_id": 1,        # 所响应的需求ID
-                "user_id": 2,        # 响应用户ID
-                "content": "我可以帮你做..."  # 响应内容
-            }
-        """
+    @app.route('/api/service-needs/<int:need_id>/respond', methods=['POST'])
+    def respond_to_need(need_id):
+        """对服务需求进行响应 (支持图片/视频上传)"""
         try:
-            data = request.json
+            from models import ServiceResponse
             
-            # 验证必填字段
-            if not all(k in data for k in ['need_id', 'user_id', 'content']):
-                return jsonify({"code": 400, "msg": "缺少必填字段"}), 400
+            # 改用 form 获取数据
+            user_id = request.form.get('responder_id')
+            content = request.form.get('content')
             
-            # 检查需求是否存在且有效
-            need = ServiceNeed.query.get(data['need_id'])
-            if not need or need.status != 0:
-                return jsonify({"code": 404, "msg": "需求不存在或已失效"}), 404
+            #处理文件上传
+            media_url = ''
+            if 'file' in request.files:
+                file = request.files['file']
+                if file and file.filename != '':
+                    filename = secure_filename(f"resp_{datetime.now().strftime('%Y%m%d%H%M%S')}_{file.filename}")
+                    file.save(os.path.join(current_app.config['UPLOAD_FOLDER'], filename))
+                    media_url = f"/uploads/{filename}"
             
-            # 检查用户是否存在
-            user = User.query.get(data['user_id'])
-            if not user:
-                return jsonify({"code": 404, "msg": "用户不存在"}), 404
+            if not user_id or not content:
+                return jsonify({"code": 400, "msg": "必填字段不能为空"}), 400
             
-            # 不允许对自己的需求进行响应
-            if need.user_id == data['user_id']:
-                return jsonify({"code": 400, "msg": "不能对自己的需求进行响应"}), 400
-            
-            # 检查是否已经响应过(避免重复)
-            existing = ServiceResponse.query.filter_by(
-                need_id=data['need_id'],
-                user_id=data['user_id'],
-                status=0  # 只检查未处理的响应
-            ).first()
-            
-            if existing:
-                return jsonify({"code": 400, "msg": "您已经对此需求进行过响应"}), 400
-            
-            # 创建新的响应记录
-            new_response = ServiceResponse(
-                need_id=data['need_id'],
-                user_id=data['user_id'],
-                content=data['content'],
-                status=0,  # 0 = 待处理
-                created_at=datetime.now(),
-                updated_at=datetime.now()
+            response = ServiceResponse(
+                need_id=need_id,
+                user_id=user_id,
+                content=content,
+                media_url=media_url, # 【改动3】存入数据库
+                status=0  # 状态 0: 待接受
             )
             
-            db.session.add(new_response)
+            db.session.add(response)
             db.session.commit()
             
-            return jsonify({
-                "code": 200,
-                "msg": "响应发布成功",
-                "data": {
-                    "id": new_response.id,
-                    "need_id": new_response.need_id,
-                    "user_id": new_response.user_id,
-                    "content": new_response.content,
-                    "status": new_response.status
-                }
-            }), 200
+            return jsonify({"code": 200, "msg": "响应成功，等待审核"}), 200
         except Exception as e:
             db.session.rollback()
             return jsonify({"code": 500, "msg": f"系统错误: {str(e)}"}), 500
@@ -372,20 +280,6 @@ def register_service_response_routes(app):
                     
                     if other_accepted:
                         return jsonify({"code": 400, "msg": "此需求已有被接受的响应"}), 400
-                    
-                    # 创建ResponseSuccess记录，标记为成功响应
-                    from models import ResponseSuccess
-                    response_success = ResponseSuccess(
-                        need_id=resp.need_id,
-                        need_user_id=need.user_id,
-                        response_id=resp.id,
-                        response_user_id=resp.user_id
-                    )
-                    db.session.add(response_success)
-                    
-                    # 只接受当前响应，不自动拒绝其他响应
-                    # 让需求发布者手动处理其他响应，避免自动拒绝带来的用户困惑
-                    # 业务逻辑：每个需求可以有多个响应，但只能接受一个
                 
                 # 状态为2(拒绝)时，也必须由需求发布者操作
                 elif new_status == 2:

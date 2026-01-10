@@ -1,179 +1,161 @@
 from app import app, db
-from models import User, Region, ServiceNeed, ServiceResponse, ResponseSuccess, MonthlySummary
+from models import User, Region, ServiceNeed, ServiceResponse, ResponseSuccess
 from datetime import datetime, timedelta
+import random
 
+# 创建应用上下文
 with app.app_context():
-    # 清空旧数据
+    print("正在清空旧数据...")
+    # 1. 清空所有相关表 (注意外键约束，从子表删起)
     db.session.query(ResponseSuccess).delete()
     db.session.query(ServiceResponse).delete()
     db.session.query(ServiceNeed).delete()
-    db.session.query(MonthlySummary).delete()
     db.session.query(Region).delete()
     db.session.query(User).delete()
-    
-    # 插入地域信息
-    regions = [
+    db.session.commit()
+    print("旧数据已清空！")
+
+    print("正在初始化基础数据...")
+    # 2. 插入地域
+    regions_data = [
         Region(province='广东省', city='广州市', name='越秀区'),
         Region(province='广东省', city='广州市', name='海珠区'),
-        Region(province='广东省', city='广州市', name='荔湾区'),
+        Region(province='广东省', city='广州市', name='天河区'),
         Region(province='广东省', city='深圳市', name='福田区'),
         Region(province='广东省', city='深圳市', name='南山区'),
-        Region(province='江苏省', city='南京市', name='玄武区'),
-        Region(province='江苏省', city='南京市', name='秦淮区'),
+        Region(province='广东省', city='深圳市', name='罗湖区'),
         Region(province='浙江省', city='杭州市', name='西湖区'),
         Region(province='浙江省', city='杭州市', name='上城区'),
     ]
-    
-    for region in regions:
-        db.session.add(region)
-    
-    # 插入管理员用户
-    admin = User(
-        username='admin',
-        password='admin',
-        user_type='admin',
-        real_name='系统管理员',
-        phone='13800138000'
-    )
+    db.session.add_all(regions_data)
+    db.session.commit()
+    regions = Region.query.all()
+
+    # 3. 插入用户
+    # 管理员
+    admin = User(username='admin', password='admin', user_type='admin', real_name='系统管理员', phone='13800138000')
     db.session.add(admin)
     
-    # 插入测试用户
-    test_users = [
-        User(username='user1', password='Pass1234', user_type='normal', real_name='用户1', phone='13800138001', bio='我喜欢帮助他人'),
-        User(username='user2', password='Pass1234', user_type='normal', real_name='用户2', phone='13800138002', bio='专业管道维修'),
-        User(username='user3', password='Pass1234', user_type='normal', real_name='用户3', phone='13800138003', bio='保洁服务专业人士'),
-        User(username='user4', password='Pass1234', user_type='normal', real_name='用户4', phone='13800138004', bio='助老服务志愿者'),
-        User(username='user5', password='Pass1234', user_type='normal', real_name='用户5', phone='13800138005', bio='专业家政服务'),
-    ]
-    
-    for user in test_users:
-        db.session.add(user)
-    
-    # 插入测试服务需求
-    service_types = ['管道维修', '助老服务', '保洁服务']
-    regions = Region.query.all()
-    users = User.query.filter(User.username != 'admin').all()
-    
-    service_needs = []
-    for i in range(5):
-        # 创建5个服务需求
-        service_need = ServiceNeed(
-            user_id=users[i % len(users)].id,
-            region_id=regions[i % len(regions)].id,
-            service_type=service_types[i % len(service_types)],
-            subject=f'测试需求{i+1}',
-            description=f'这是测试需求{i+1}的详细描述',
-            status=0,  # 活跃状态
-            created_at=datetime.now() - timedelta(days=i*7)
+    # 普通用户 (生成20个用户，让生态更丰富)
+    users = []
+    for i in range(1, 21):
+        # 注意：这里 i 最大为20，phone 长度控制在11位
+        phone_num = f"139000000{i:02d}" # 格式化为 01, 02... 保证长度
+        user = User(
+            username=f'user{i}', 
+            password='Pass1234', 
+            user_type='normal', 
+            real_name=f'社区居民{i}', 
+            phone=phone_num,
+            bio=f'我是社区居民{i}，热心肠，喜欢帮助大家。'
         )
-        service_needs.append(service_need)
-        db.session.add(service_need)
-    
-    # 插入测试服务响应
-    service_responses = []
-    for i, need in enumerate(service_needs):
-        # 每个需求创建2个响应
-        for j in range(2):
-            service_response = ServiceResponse(
-                need_id=need.id,
-                user_id=users[(i+j+1) % len(users)].id,
-                content=f'这是对需求{need.id}的第{j+1}个响应',
-                status=0,  # 待接受
-                created_at=datetime.now() - timedelta(days=i*7 + 1 + j)
-            )
-            service_responses.append(service_response)
-            db.session.add(service_response)
-    
-    # 插入测试响应成功记录
-    for i in range(0, len(service_responses), 2):
-        # 每2个响应中标记1个为成功
-        if i < len(service_needs):
-            success = ResponseSuccess(
-                need_id=service_needs[i].id,
-                need_user_id=service_needs[i].user_id,
-                response_id=service_responses[i].id,
-                response_user_id=service_responses[i].user_id,
-                accept_date=datetime.now() - timedelta(days=i*7 + 2)
-            )
-            db.session.add(success)
-            # 更新响应状态为已接受
-            service_responses[i].status = 1
-    
-    # 重新计算月度汇总数据
-    # 获取所有需要统计的服务需求
-    all_needs = ServiceNeed.query.all()
-    all_successes = ResponseSuccess.query.all()
-    
-    # 按月份、地域、服务类型分组统计
-    stats_map = {}
-    
-    # 统计服务需求数
-    for need in all_needs:
-        # 获取月份 (YYYYMM格式)
-        month = need.created_at.strftime('%Y%m')
-        
-        # 获取地域信息
-        region = Region.query.get(need.region_id)
-        province = region.province if region else '未知'
-        city = region.city if region else '未知'
-        
-        # 服务类型
-        service_type = need.service_type
-        
-        # 生成唯一键
-        key = f"{month}|{province}|{city}|{service_type}"
-        
-        # 初始化或更新统计数据
-        if key not in stats_map:
-            stats_map[key] = {
-                'month': month,
-                'province': province,
-                'city': city,
-                'service_type': service_type,
-                'need_count': 0,
-                'response_success_count': 0
-            }
-        
-        stats_map[key]['need_count'] += 1
-    
-    # 统计响应成功数
-    for success in all_successes:
-        # 获取需求信息
-        need = ServiceNeed.query.get(success.need_id)
-        if not need:
-            continue
-        
-        # 获取月份 (YYYYMM格式)
-        month = success.accept_date.strftime('%Y%m')
-        
-        # 获取地域信息
-        region = Region.query.get(need.region_id)
-        province = region.province if region else '未知'
-        city = region.city if region else '未知'
-        
-        # 服务类型
-        service_type = need.service_type
-        
-        # 生成唯一键
-        key = f"{month}|{province}|{city}|{service_type}"
-        
-        # 初始化或更新统计数据
-        if key not in stats_map:
-            stats_map[key] = {
-                'month': month,
-                'province': province,
-                'city': city,
-                'service_type': service_type,
-                'need_count': 0,
-                'response_success_count': 0
-            }
-        
-        stats_map[key]['response_success_count'] += 1
-    
-    # 插入月度汇总数据
-    for stat_data in stats_map.values():
-        monthly_summary = MonthlySummary(**stat_data)
-        db.session.add(monthly_summary)
+        users.append(user)
+        db.session.add_all(users)
     
     db.session.commit()
-    print("数据初始化成功！")
+    # 重新获取用户列表用于随机选择
+    all_users = User.query.filter_by(user_type='normal').all()
+    print(f"基础数据初始化完成：{len(regions)}个地域，{len(all_users)}个用户。")
+
+    print("正在生成海量业务模拟数据 (2023.01 - 2023.06)...")
+    
+    service_types = ['管道维修', '助老服务', '保洁服务', '定期接送服务', '营养餐服务', '就诊服务']
+    
+    # 生成 2023年1月 到 6月 的数据
+    months = ['202301', '202302', '202303', '202304', '202305', '202306']
+    
+    total_needs = 0
+    total_success = 0
+
+    for month_str in months:
+        year = int(month_str[:4])
+        month = int(month_str[4:])
+        
+        # 每个月随机生成 50 到 100 条需求
+        monthly_count = random.randint(50, 100)
+        print(f"  正在生成 {month_str} 数据: 计划 {monthly_count} 条...")
+        
+        for _ in range(monthly_count):
+            # 1. 随机基础信息
+            day = random.randint(1, 28) # 避开大小月问题，简单处理
+            hour = random.randint(8, 22)
+            create_time = datetime(year, month, day, hour, random.randint(0, 59))
+            
+            publisher = random.choice(all_users)
+            region = random.choice(regions)
+            stype = random.choice(service_types)
+            
+            # 2. 创建需求
+            need = ServiceNeed(
+                user_id=publisher.id,
+                region_id=region.id,
+                service_type=stype,
+                subject=f"急需{region.city}{region.name}{stype}人员",
+                description=f"我们在{region.name}遇到了一些问题，需要专业的{stype}人员帮忙，请尽快联系。",
+                status=0, # 默认为0，后面根据逻辑修改
+                created_at=create_time,
+                updated_at=create_time
+            )
+            db.session.add(need)
+            db.session.flush() # 拿到 need.id
+            total_needs += 1
+
+            # 3. 随机决定该需求的状态
+            # 80% 概率会有响应
+            if random.random() < 0.8:
+                # 随机生成 1 到 3 个响应
+                response_count = random.randint(1, 3)
+                has_accepted = False # 标记是否已经有人被接受了
+
+                for _ in range(response_count):
+                    responder = random.choice([u for u in all_users if u.id != publisher.id])
+                    resp_time = create_time + timedelta(minutes=random.randint(10, 300))
+                    
+                    resp = ServiceResponse(
+                        need_id=need.id,
+                        user_id=responder.id,
+                        content=f"我可以提供{stype}，我有经验，就在附近。",
+                        status=0,
+                        created_at=resp_time,
+                        updated_at=resp_time
+                    )
+                    db.session.add(resp)
+                    db.session.flush()
+
+                    # 逻辑：如果这个需求还没被解决，决定是否接受这个响应
+                    # 60% 概率会成交 (ResponseSuccess)
+                    if not has_accepted and random.random() < 0.6:
+                        # 变成成交状态
+                        need.status = 1  # 需求状态：已完成(1)
+                        resp.status = 1  # 响应状态：已接受(1)
+                        resp.updated_at = resp_time + timedelta(hours=1)
+                        need.updated_at = resp_time + timedelta(hours=1)
+                        
+                        # 插入成功记录表
+                        succ = ResponseSuccess(
+                            need_id=need.id,
+                            need_user_id=publisher.id,
+                            response_id=resp.id,
+                            response_user_id=responder.id,
+                            accept_date=resp.updated_at,
+                            created_at=resp.updated_at
+                        )
+                        db.session.add(succ)
+                        has_accepted = True
+                        total_success += 1
+                    
+                    # 如果已经有人被接受了，其他的响应大概率是拒绝(2)或者闲置(0)
+                    elif has_accepted:
+                        if random.random() < 0.8:
+                            resp.status = 2 # 拒绝
+            
+            # 还有 10% 的概率需求被取消
+            elif random.random() < 0.1:
+                need.status = -1 # 已取消
+
+    db.session.commit()
+    print("="*50)
+    print(f"数据生成完毕！")
+    print(f"共生成需求: {total_needs} 条")
+    print(f"共达成交易: {total_success} 单")
+    print("请重启后端程序 (python app.py)，然后刷新前端页面查看漂亮的统计图！")

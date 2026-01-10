@@ -190,7 +190,8 @@ def register_user_routes(app):
             if not user:
                 return jsonify({"code": 404, "msg": "用户不存在"}), 404
             
-            query = ServiceResponse.query.filter_by(user_id=user_id)
+            # 按时间倒序排列，这样刚发布的会在最前面
+            query = ServiceResponse.query.filter_by(user_id=user_id).order_by(ServiceResponse.created_at.desc())
             pagination = query.paginate(page=page, per_page=per_page, error_out=False)
             
             items = []
@@ -200,6 +201,7 @@ def register_user_routes(app):
                     "id": response.id,
                     "need_subject": need.subject if need else '未知',
                     "content": response.content,
+                    "media_url": response.media_url,  # <--- 【关键修改】这里必须补上！
                     "status": response.status,
                     "created_at": response.created_at.strftime('%Y-%m-%d %H:%M:%S'),
                     "review_time": response.updated_at.strftime('%Y-%m-%d %H:%M:%S') if response.updated_at else None

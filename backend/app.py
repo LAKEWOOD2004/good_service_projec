@@ -1,3 +1,5 @@
+import os
+from flask import send_from_directory
 from flask import Flask, jsonify, request
 from models import db, User, Region
 from flask_cors import CORS # 处理跨域
@@ -9,10 +11,26 @@ from admin_routes import register_admin_routes
 
 app = Flask(__name__)
 # 允许跨域，这样 Vue 才能访问 Flask
+
+# 1. 确定上传文件存放在 backend/uploads 文件夹下
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+UPLOAD_FOLDER = os.path.join(BASE_DIR, 'uploads')
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+
+# 2. 如果这个文件夹不存在，自动创建它
+if not os.path.exists(UPLOAD_FOLDER):
+    os.makedirs(UPLOAD_FOLDER)
+
+# 3. 开一个“窗口”，让前端能通过网址看到上传的图片
+# 访问地址示例: http://127.0.0.1:5000/uploads/20250106.jpg
+@app.route('/uploads/<filename>')
+def uploaded_file(filename):
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+
 CORS(app)
 
 # 数据库连接配置 (用户名:密码@地址/数据库名)
-app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+mysqlconnector://root:963852741zcbm@localhost/good_service_db'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+mysqlconnector://root:123456@localhost/good_service_db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db.init_app(app)

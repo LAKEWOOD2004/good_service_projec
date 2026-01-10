@@ -1,3 +1,6 @@
+import os
+from werkzeug.utils import secure_filename
+from flask import current_app
 from flask import jsonify, request
 from models import db, ServiceNeed, Region, User
 from sqlalchemy import and_, desc
@@ -52,7 +55,8 @@ def register_service_need_routes(app):
                     "region": f"{region_obj.province}-{region_obj.city}-{region_obj.name}" if region_obj else '未指定',
                     "publisher": user.real_name or user.username,
                     "created_at": need.created_at.strftime('%Y-%m-%d %H:%M:%S'),
-                    "status": need.status
+                    "status": need.status,
+                    "media_url": need.media_url  
                 })
             
             return jsonify({
@@ -113,6 +117,22 @@ def register_service_need_routes(app):
             items = []
             for need in pagination.items:
                 region = Region.query.get(need.region_id) if need.region_id else None
+                
+                # 查询该需求下的所有响应 
+                from models import ServiceResponse, User as UserModel
+                responses_data = []
+                responses = ServiceResponse.query.filter_by(need_id=need.id).all()
+                for resp in responses:
+                    resp_user = UserModel.query.get(resp.user_id)
+                    responses_data.append({
+                        "id": resp.id,
+                        "content": resp.content,
+                        "media_url": resp.media_url,  
+                        "status": resp.status,
+                        "responder_name": resp_user.real_name or resp_user.username if resp_user else "未知用户"
+                    })
+                # ----------------------------------
+
                 items.append({
                     "id": need.id,
                     "subject": need.subject,
@@ -121,7 +141,9 @@ def register_service_need_routes(app):
                     "region": f"{region.province}-{region.city}-{region.name}" if region else '未指定',
                     "created_at": need.created_at.strftime('%Y-%m-%d %H:%M:%S'),
                     "status": need.status,
-                    "status_text": "已发布" if need.status == 0 else "已取消"
+                    "media_url": need.media_url,  #发布者自己的图片/视频
+                    "status_text": "已发布" if need.status == 0 else "已取消",
+                    "responses": responses_data   
                 })
             
             return jsonify({
@@ -139,42 +161,44 @@ def register_service_need_routes(app):
     
     @app.route('/api/service-needs', methods=['POST'])
     def create_service_need():
-        """创建新的服务需求"""
+        """创建新的服务需求 (支持图片/视频上传)"""
         try:
-            data = request.json
-            user_id = data.get('user_id')
-            subject = data.get('subject')
-            service_type = data.get('service_type')
-            description = data.get('description')
-            region_id = data.get('region_id')
+            # 用 form 获取数据，因为前端传的是 FormData
+            user_id = request.form.get('user_id')
+            subject = request.form.get('subject')
+            service_type = request.form.get('service_type')
+            description = request.form.get('description')
+            region_id = request.form.get('region_id')
             
-            # 验证必填字段
+            #处理文件上传
+            media_url = ''
+            if 'file' in request.files:
+                file = request.files['file']
+                if file and file.filename != '':
+                    # 给文件名加个时间戳，防止重名
+                    filename = secure_filename(f"{datetime.now().strftime('%Y%m%d%H%M%S')}_{file.filename}")
+                    # 保存到 app.py 里配置好的 uploads 文件夹
+                    file.save(os.path.join(current_app.config['UPLOAD_FOLDER'], filename))
+                    # 生成访问路径存数据库
+                    media_url = f"/uploads/{filename}"
+
             if not all([user_id, subject, service_type]):
                 return jsonify({"code": 400, "msg": "必填字段不能为空"}), 400
             
-            # 检查用户是否存在
-            user = User.query.get(user_id)
-            if not user:
-                return jsonify({"code": 404, "msg": "用户不存在"}), 404
-            
-            # 创建新需求
             need = ServiceNeed(
                 user_id=user_id,
                 subject=subject,
                 service_type=service_type,
                 description=description,
                 region_id=region_id,
+                media_url=media_url,  #把路径存入数据库
                 status=0
             )
             
             db.session.add(need)
             db.session.commit()
             
-            return jsonify({
-                "code": 200,
-                "msg": "需求发布成功",
-                "data": {"id": need.id}
-            }), 200
+            return jsonify({"code": 200, "msg": "需求发布成功"}), 200
         except Exception as e:
             db.session.rollback()
             return jsonify({"code": 500, "msg": f"系统错误: {str(e)}"}), 500
@@ -247,66 +271,3 @@ def register_service_need_routes(app):
             db.session.rollback()
             return jsonify({"code": 500, "msg": f"系统错误: {str(e)}"}), 500
     
-    # 注意：此API端点已被废弃，请使用 /api/service-responses POST 接口
-    @app.route('/api/service-needs/<int:need_id>/respond', methods=['POST'])
-    def respond_to_need(need_id):
-        """
-        对服务需求进行响应 (已废弃)
-        """
-        try:
-            from models import ServiceResponse
-            
-            data = request.json
-            need = ServiceNeed.query.get(need_id)
-            
-            if not need:
-                return jsonify({"code": 404, "msg": "需求不存在"}), 404
-            
-            # 检查需求是否有效
-            if need.status != 0:
-                return jsonify({"code": 400, "msg": "需求已失效"}), 400
-            
-            user_id = data.get('responder_id')
-            content = data.get('content')
-            
-            if not user_id or not content:
-                return jsonify({"code": 400, "msg": "必填字段不能为空"}), 400
-            
-            # 检查用户是否存在
-            user = User.query.get(user_id)
-            if not user:
-                return jsonify({"code": 404, "msg": "用户不存在"}), 404
-            
-            # 不允许对自己的需求进行响应
-            if need.user_id == user_id:
-                return jsonify({"code": 400, "msg": "不能对自己的需求进行响应"}), 400
-            
-            # 检查是否已经响应过
-            existing = ServiceResponse.query.filter_by(
-                need_id=need_id,
-                user_id=user_id,
-                status=0
-            ).first()
-            
-            if existing:
-                return jsonify({"code": 400, "msg": "您已经对此需求进行过响应"}), 400
-            
-            # 创建响应
-            response = ServiceResponse(
-                need_id=need_id,
-                user_id=user_id,
-                content=content,
-                status=0  # 待处理
-            )
-            
-            db.session.add(response)
-            db.session.commit()
-            
-            return jsonify({
-                "code": 200,
-                "msg": "响应成功",
-                "data": {"id": response.id}
-            }), 200
-        except Exception as e:
-            db.session.rollback()
-            return jsonify({"code": 500, "msg": f"系统错误: {str(e)}"}), 500
