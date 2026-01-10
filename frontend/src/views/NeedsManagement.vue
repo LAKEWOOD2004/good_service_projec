@@ -59,11 +59,31 @@
                     <v-list-item v-for="response in need.responses" :key="response.id" class="mb-2">
                       <template v-slot:prepend>
                         <v-avatar color="primary" size="small">
-                          <span class="text-white">{{ (response.responder_name || '游客')[0] }}</span>
+                          <span class="text-white">{{ response.responder_name[0] }}</span>
                         </v-avatar>
                       </template>
                       <v-list-item-title class="font-weight-bold">{{ response.responder_name }}</v-list-item-title>
                       <v-list-item-subtitle>{{ response.content }}</v-list-item-subtitle>
+                      <div v-if="response.media_url" class="mt-3">
+                        <p class="text-caption text-grey mb-1">附件介绍：</p>
+                        
+                        <video 
+                          v-if="response.media_url.toLowerCase().match(/\.(mp4|avi|mov)$/)" 
+                          :src="'http://127.0.0.1:5000' + response.media_url" 
+                          controls 
+                          style="max-width: 200px; border-radius: 8px; border: 1px solid #eee;"
+                        ></video>
+                        
+                        <v-img 
+                          v-else 
+                          :src="'http://127.0.0.1:5000' + response.media_url" 
+                          max-width="200" 
+                          max-height="150"
+                          class="rounded-lg bg-grey-lighten-4"
+                          style="cursor: pointer;"
+                          @click="window.open('http://127.0.0.1:5000' + response.media_url)"
+                        ></v-img>
+                      </div>
                       <template v-slot:append>
                         <v-chip :color="getResponseStatusColor(response.status)" text-color="white" size="x-small">{{ getResponseStatusText(response.status) }}</v-chip>
                       </template>
@@ -71,8 +91,6 @@
                   </v-list>
                   <p v-else style="color: #999;">暂无响应</p>
                 </div>
-
-                <v-divider class="my-6"></v-divider>
 
                 <v-row>
                   <v-col cols="12" sm="6">
@@ -100,16 +118,16 @@
                   </v-col>
                 </v-row>
 
-                <v-row v-if="need.status === 0 && need.responses && need.responses.length > 0" class="mt-4">
+                <v-row v-if="need.status === 'open' && need.responses && need.responses.length > 0" class="mt-4">
                   <v-col cols="12">
                     <v-divider class="mb-4"></v-divider>
                     <span class="label d-block mb-4">待处理响应</span>
                     <v-row>
-                      <v-col v-for="response in need.responses.filter(r => r.status === 0)" :key="response.id" cols="12" sm="6">
+                      <v-col v-for="response in need.responses.filter(r => r.status === 'pending')" :key="response.id" cols="12" sm="6">
                         <v-card elevation="2" class="rounded-lg pa-4">
                           <div class="mb-3">
                             <v-icon color="primary" size="small">mdi-account</v-icon>
-                            <span class="ml-2 font-weight-bold">{{ response.responder_name || '游客' }}</span>
+                            <span class="ml-2 font-weight-bold">{{ response.responder_name }}</span>
                           </div>
                           <p class="text-sm mb-4">{{ response.content }}</p>
                           <v-row>
@@ -203,20 +221,20 @@ const getTypeColor = (type) => {
 }
 
 const getStatusColor = (status) => {
-  const colors = { 0: '#4CAF50', '-1': '#FF9800' }
+  const colors = { 'open': '#4CAF50', 'closed': '#FF9800', 'pending': '#2196F3' }
   return colors[status] || '#616161'
+}
+
+const getResponseStatusText = (status) => {
+  // 必须对应数据库存的数字
+  const texts = { 0: '待处理', 1: '已接受', 2: '已拒绝', 3: '已取消' }
+  return texts[status] || '未知'
 }
 
 const getResponseStatusColor = (status) => {
   const colors = { 0: '#2196F3', 1: '#4CAF50', 2: '#F44336', 3: '#9E9E9E' }
   return colors[status] || '#616161'
 }
-
-const getResponseStatusText = (status) => {
-  const texts = { 0: '待处理', 1: '已接受', 2: '已拒绝', 3: '已取消' }
-  return texts[status] || '未知'
-}
-
 const loadNeeds = async () => {
   try {
     const userData = localStorage.getItem('user')
@@ -239,22 +257,18 @@ const loadNeeds = async () => {
         description: n.description,
         region: n.region,
         status: n.status,
-        responses: [],
-        status_text: n.status === 0 ? '开放' : n.status === -1 ? '已取消' : '待处理'
+        media_url: n.media_url, // 【新增】保存发布者上传的媒体路径 
+        // 【关键修正】将后端返回的 responses 映射到前端 [cite: 12]
+        responses: n.responses ? n.responses.map(r => ({
+          id: r.id,
+          responder_name: r.responder_name || '匿名用户',
+          content: r.content,
+          status: r.status,
+          media_url: r.media_url // 【新增】保存响应者上传的媒体路径 
+        })) : [],
+        status_text: n.status === 0 ? '开放' : n.status === 1 ? '已完成' : '已取消'
       }))
       pagination.value.totalPages = res.data.pagination?.pages || 1
-      
-      // 为每个需求加载响应列表
-      for (const need of needs.value) {
-        try {
-          const responsesRes = await axios.get(`http://127.0.0.1:5000/api/service-needs/${need.id}/responses`)
-          if (responsesRes.data.code === 200) {
-            need.responses = responsesRes.data.data
-          }
-        } catch (error) {
-          console.error(`加载需求 ${need.id} 的响应列表失败:`, error)
-        }
-      }
     }
   } catch (error) {
     console.error('加载失败:', error)
@@ -290,11 +304,8 @@ const confirmDelete = async () => {
 
 const acceptResponse = async (response) => {
   try {
-    const userData = localStorage.getItem('user')
-    const user = JSON.parse(userData)
-    const res = await axios.put(`http://127.0.0.1:5000/api/service-responses/${response.id}`, {
-      user_id: user.id,
-      status: 1 // 1 = 已接受
+    const res = await axios.put(`http://127.0.0.1:5000/api/service_responses/${response.id}`, {
+      status: 'accepted'
     })
     if (res.data.code === 200) {
       snackbar.value = { show: true, message: '已接受', color: 'success' }
@@ -307,11 +318,8 @@ const acceptResponse = async (response) => {
 
 const rejectResponse = async (response) => {
   try {
-    const userData = localStorage.getItem('user')
-    const user = JSON.parse(userData)
-    const res = await axios.put(`http://127.0.0.1:5000/api/service-responses/${response.id}`, {
-      user_id: user.id,
-      status: 2 // 2 = 已拒绝
+    const res = await axios.put(`http://127.0.0.1:5000/api/service_responses/${response.id}`, {
+      status: 'rejected'
     })
     if (res.data.code === 200) {
       snackbar.value = { show: true, message: '已拒绝', color: 'success' }

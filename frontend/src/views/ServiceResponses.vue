@@ -27,7 +27,7 @@
               <td class="text-sm">{{ formatDate(response.create_time) }}</td>
               <td>
                 <v-btn variant="outlined" color="primary" size="x-small" class="mr-2" @click="viewDetail(response)">详情</v-btn>
-                <v-btn v-if="response.status === 'pending'" variant="outlined" color="error" size="x-small" @click="deleteResponse(response)">删除</v-btn>
+                <v-btn v-if="response.status === 0" variant="outlined" color="error" size="x-small" @click="deleteResponse(response)">删除</v-btn>
               </td>
             </tr>
           </tbody>
@@ -60,7 +60,7 @@
           </v-card-title>
         </div>
 
-        <v-card-text class="py-6 px-6">
+        <v-card-text class="py-6 px-6" style="max-height: 60vh; overflow-y: auto;">
           <div class="mb-6">
             <span class="text-sm font-weight-bold" style="color: #999;">需求</span>
             <p class="mt-2 text-h6 font-weight-bold">{{ detailDialog.response.need_title }}</p>
@@ -69,6 +69,31 @@
           <div class="mb-6">
             <span class="text-sm font-weight-bold" style="color: #999;">响应内容</span>
             <div class="mt-2 pa-4 rounded-lg" style="background-color: #f5f5f5; line-height: 1.6;">{{ detailDialog.response.content }}</div>
+          </div>
+
+          <div v-if="detailDialog.response.media_url" class="mb-6">
+            <span class="text-sm font-weight-bold" style="color: #999;">响应附件</span>
+            <div class="mt-2">
+              <video 
+                v-if="detailDialog.response.media_url.toLowerCase().match(/\.(mp4|avi|mov)$/)" 
+                :src="'http://127.0.0.1:5000' + detailDialog.response.media_url" 
+                controls 
+                style="max-width: 100%; border-radius: 12px; border: 1px solid #e0e0e0;"
+              ></video>
+              
+              <v-img 
+                v-else 
+                :src="'http://127.0.0.1:5000' + detailDialog.response.media_url" 
+                max-height="300" 
+                class="rounded-xl bg-grey-lighten-4"
+              >
+                <template v-slot:placeholder>
+                  <v-row class="fill-height ma-0" align="center" justify="center">
+                    <v-progress-circular indeterminate color="grey-lighten-5"></v-progress-circular>
+                  </v-row>
+                </template>
+              </v-img>
+            </div>
           </div>
 
           <div class="mb-6">
@@ -92,7 +117,7 @@
         <v-card-actions class="py-4 px-6">
           <v-spacer></v-spacer>
           <v-btn variant="outlined" color="primary" class="rounded-lg" @click="detailDialog.show = false">关闭</v-btn>
-          <v-btn v-if="detailDialog.response.status === 'pending'" variant="flat" color="white" class="rounded-lg ml-2" style="background: linear-gradient(135deg, #2E7D32 0%, #1976D2 100%);" @click="deleteResponse(detailDialog.response); detailDialog.show = false">删除</v-btn>
+          <v-btn v-if="detailDialog.response.status === 0" variant="flat" color="white" class="rounded-lg ml-2" style="background: linear-gradient(135deg, #2E7D32 0%, #1976D2 100%);" @click="deleteResponse(detailDialog.response); detailDialog.show = false">删除</v-btn>
         </v-card-actions>
       </v-card>
     </v-dialog>
@@ -150,10 +175,16 @@ const formatDate = (dateStr) => {
 }
 
 const getStatusColor = (status) => {
-  const colors = { 0: '#2196F3', 1: '#4CAF50', 2: '#F44336', 3: '#9E9E9E' }
+  const colors = { 
+    0: '#2196F3', // 0: 待处理 (蓝色)
+    1: '#4CAF50', // 1: 已同意 (绿色)
+    2: '#F44336', // 2: 已拒绝 (红色)
+    3: '#9E9E9E'  // 3: 已取消 (灰色)
+  }
   return colors[status] || '#616161'
 }
 
+// 修改加载数据逻辑：正确映射 status_text
 const loadResponses = async () => {
   try {
     const userData = localStorage.getItem('user')
@@ -173,15 +204,14 @@ const loadResponses = async () => {
         id: r.id,
         need_title: r.need_subject || r.subject || '未知需求',
         content: r.content,
-        status: r.status,
+        media_url: r.media_url, // <--- 【新增】这里接收后端传来的图片地址
+        status: r.status, 
         create_time: r.created_at,
-        review_time: r.updated_at,
-        status_text: {
-          0: '待处理',
-          1: '已接受',
-          2: '已拒绝',
-          3: '已取消'
-        }[r.status] || '未知状态'
+        review_time: r.review_time,
+        status_text: r.status === 0 ? '待处理' : 
+                     r.status === 1 ? '已同意' : 
+                     r.status === 2 ? '已拒绝' : 
+                     r.status === 3 ? '已取消' : '未知状态'
       }))
       pagination.value.totalPages = res.data.pagination?.pages || 1
     }
@@ -204,20 +234,29 @@ const deleteResponse = (response) => {
 const confirmDelete = async () => {
   if (!deleteDialog.value.response) return
   deleteDialog.value.loading = true
+  
   try {
-    // 后端API使用PUT请求来标记响应为已取消，而不是DELETE请求
+    // 1. 先获取当前用户ID (为了传给后端做权限验证)
     const userData = localStorage.getItem('user')
     const user = JSON.parse(userData)
-    const res = await axios.put(`http://127.0.0.1:5000/api/service-responses/${deleteDialog.value.response.id}`, {
-      user_id: user.id,
-      status: 3 // 3 = 已取消
-    })
+
+    // 2. 【关键修改】axios.delete 传参需要包在 { data: ... } 里
+    const res = await axios.delete(
+      `http://127.0.0.1:5000/api/service-responses/${deleteDialog.value.response.id}`,
+      {
+        data: {
+          user_id: user.id
+        }
+      }
+    )
+
     if (res.data.code === 200) {
       snackbar.value = { show: true, message: '删除成功', color: 'success' }
       deleteDialog.value.show = false
       loadResponses()
     }
   } catch (error) {
+    console.error(error) // 方便调试
     snackbar.value = { show: true, message: error.response?.data?.msg || '删除失败', color: 'error' }
   } finally {
     deleteDialog.value.loading = false

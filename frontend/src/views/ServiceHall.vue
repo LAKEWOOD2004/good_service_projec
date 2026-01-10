@@ -15,7 +15,7 @@
                 label="搜索关键词"
                 prepend-inner-icon="mdi-magnify"
                 variant="outlined"
-                density="default"
+                density="comfortable"
                 color="primary"
                 @keyup.enter="loadNeeds"
               ></v-text-field>
@@ -27,7 +27,7 @@
                 :items="serviceTypes"
                 prepend-inner-icon="mdi-tag"
                 variant="outlined"
-                density="default"
+                density="comfortable"
                 color="primary"
                 clearable
                 @update:model-value="loadNeeds"
@@ -42,7 +42,7 @@
                 item-value="id"
                 prepend-inner-icon="mdi-map-marker"
                 variant="outlined"
-                density="default"
+                density="comfortable"
                 color="primary"
                 clearable
                 @update:model-value="loadNeeds"
@@ -134,7 +134,10 @@
           <v-card-title class="text-h5 text-white pa-0">{{ detailDialog.need.title }}</v-card-title>
         </div>
 
-        <v-card-text class="py-6 px-6">
+        <v-card-text 
+    class="py-6 px-6" 
+    style="max-height: 70vh; overflow-y: auto;"
+  >
           <div class="mb-6 d-flex align-center" style="gap:16px;">
             <span class="text-sm font-weight-bold" style="color: #999; width: 110px;">服务类型</span>
             <v-chip :color="getTypeColor(detailDialog.need.service_type)" text-color="white" class="elevated-chip" size="large">{{ detailDialog.need.service_type }}</v-chip>
@@ -143,12 +146,39 @@
           <div class="mb-6">
             <span class="text-sm font-weight-bold" style="color: #999;">描述</span>
             <p class="mt-2">{{ detailDialog.need.description }}</p>
+            
+            <div v-if="detailDialog.need.media_url" class="mt-4">
+              <span class="text-sm font-weight-bold d-block mb-2" style="color: #999;">附件介绍</span>
+              
+              <video 
+                v-if="detailDialog.need.media_url.toLowerCase().match(/\.(mp4|avi|mov)$/)" 
+                :src="'http://127.0.0.1:5000' + detailDialog.need.media_url" 
+                controls 
+                style="max-width: 100%; border-radius: 12px; border: 1px solid #e0e0e0;"
+              ></video>
+              
+              <v-img 
+                v-else 
+                :src="'http://127.0.0.1:5000' + detailDialog.need.media_url" 
+                max-height="300" 
+                class="rounded-xl bg-grey-lighten-4"
+                cover
+              >
+                <template v-slot:placeholder>
+                  <v-row class="fill-height ma-0" align="center" justify="center">
+                    <v-progress-circular indeterminate color="grey-lighten-5"></v-progress-circular>
+                  </v-row>
+                </template>
+              </v-img>
+            </div>
           </div>
 
           <div class="mb-6">
             <span class="text-sm font-weight-bold" style="color: #999;">地区</span>
             <p class="mt-2">{{ detailDialog.need.region }}</p>
           </div>
+
+          
 
           <div class="mb-6">
             <span class="text-sm font-weight-bold" style="color: #999;">发布者</span>
@@ -202,8 +232,18 @@
               :rules="[v => !!v || '必填', v => v.length >= 10 || '至少10个字']"
               variant="outlined"
               color="primary"
-              density="default"
+              density="comfortable"
             ></v-textarea>
+            <v-file-input
+              v-model="responseDialog.file"
+              label="上传图片或视频（可选）"
+              accept="image/*,video/*"
+              prepend-inner-icon="mdi-camera"
+              variant="outlined"
+              density="comfortable"
+              class="mt-4"
+              show-size
+            ></v-file-input>
           </v-form>
         </v-card-text>
 
@@ -235,7 +275,7 @@ const pagination = ref({ page: 1, pageSize: 9, totalPages: 1 })
 const serviceTypes = ref(['管道维修', '助老服务', '保洁服务', '就诊服务', '营养餐服务', '定期接送服务', '其他'])
 const regions = ref([])
 const detailDialog = ref({ show: false, need: null })
-const responseDialog = ref({ show: false, need: null, content: '', valid: false, submitting: false })
+const responseDialog = ref({ show: false, need: null, content: '',file: null, valid: false, submitting: false })
 const responseForm = ref(null)
 const snackbar = ref({ show: false, message: '', color: 'success' })
 
@@ -286,6 +326,7 @@ const loadNeeds = async () => {
         region: n.region,
         created_by: n.publisher,
         create_time: n.created_at,
+        media_url: n.media_url, 
         status: 'open',
         status_text: '开放'
       }))
@@ -312,14 +353,30 @@ const submitResponse = async () => {
   
   responseDialog.value.submitting = true
   try {
-    const res = await axios.post(`http://127.0.0.1:5000/api/service-needs/${responseDialog.value.need.id}/respond`, {
-      responder_id: user.id,
-      content: responseDialog.value.content
-    })
+    // 【修改】构建 FormData
+    const formData = new FormData()
+    formData.append('responder_id', user.id)
+    formData.append('content', responseDialog.value.content)
+    
+    // 处理文件上传
+    if (responseDialog.value.file) {
+      const fileToUpload = Array.isArray(responseDialog.value.file) ? responseDialog.value.file[0] : responseDialog.value.file
+      formData.append('file', fileToUpload)
+    }
+
+    // 发送请求
+    const res = await axios.post(
+      `http://127.0.0.1:5000/api/service-needs/${responseDialog.value.need.id}/respond`, 
+      formData,
+      { headers: { 'Content-Type': 'multipart/form-data' } }
+    )
+
     if (res.data.code === 200 || res.data.code === 201) {
       snackbar.value = { show: true, message: '响应成功', color: 'success' }
       responseDialog.value.show = false
+      // 清空表单
       responseDialog.value.content = ''
+      responseDialog.value.file = null 
       loadNeeds()
     }
   } catch (error) {
